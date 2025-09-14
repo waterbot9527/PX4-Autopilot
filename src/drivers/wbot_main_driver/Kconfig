@@ -1,0 +1,5 @@
+menuconfig DRIVERS_WBOT_MAIN_DRIVER
+	bool "wbot_main_driver"
+	default n
+	---help---
+		Enable support for Water Robot Main Driver
