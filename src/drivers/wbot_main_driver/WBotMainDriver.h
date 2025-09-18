@@ -47,6 +47,7 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
+#include <uORB/topics/wbot_moto.h>
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
 {
@@ -63,10 +64,16 @@ public:
 
 	void RunImpl() ;
 
+
+
 private:
 	PX4Accelerometer _px4_accel;
 	PX4Gyroscope _px4_gyro;
+	int _wbot_moto_sub = -1;
+
 
 	void exit_and_cleanup() override;
 	int probe() override;
+
+	bool Reset();
 };

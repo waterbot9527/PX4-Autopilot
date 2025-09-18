@@ -36,6 +36,7 @@
 
 constexpr px4_spi_bus_t px4_spi_buses[SPI_BUS_MAX_BUS_ITEMS] = {
 	initSPIBus(0, {
-		initSPIDevice(DRV_IMU_DEVTYPE_MPU9250, 0),
+		initSPIDevice(DRV_WATERBOT_MAIN_DRIVER, 0),
+		initSPIDevice(DRV_WATERBOT_MAIN_DRIVER, 1),
 	}),
 };

@@ -1,0 +1,5 @@
+menuconfig MODULES_WBOT_MOTO_TEST
+	bool "wbot_moto_test"
+	default n
+	---help---
+		Enable support for wbot moto test

@@ -271,6 +271,8 @@ set(msg_files
 	versioned/VehicleStatus.msg
 	versioned/VtolVehicleStatus.msg
 	versioned/Wind.msg
+	# waterbot msg
+	wbot_moto.msg
 )
 list(SORT msg_files)
 

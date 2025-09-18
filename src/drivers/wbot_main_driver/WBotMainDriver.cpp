@@ -41,6 +41,8 @@
 
 using namespace time_literals;
 
+
+
 WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	SPI(config),
 	I2CSPIDriver(config),
@@ -56,20 +58,62 @@ WBotMainDriver::~WBotMainDriver()
 int WBotMainDriver::init()
 {
 	PX4_INFO("Water Robot Main Driver Initialized!");
-	ScheduleOnInterval(1_s); // Print message every 1 second
-	return PX4_OK;
+
+	int ret = SPI::init();
+
+	if (ret != PX4_OK) {
+		DEVICE_DEBUG("SPI::init failed (%i)", ret);
+
+		return ret;
+	}
+	DEVICE_DEBUG("SPI::init ok (%i)", ret);
+	DEVICE_DEBUG("spi dev id= %i addr= %i", get_device_id(), get_device_address());
+	_wbot_moto_sub = orb_subscribe_multi(ORB_ID(wbot_moto), get_device_address());
+
+	return Reset() ? 0 : -1;
+}
+
+bool WBotMainDriver::Reset()
+{
+	_state = STATE::RESET;
+	ScheduleClear();
+	ScheduleNow();
+
+	uint32_t interva_delay_us = 1000*1000;
+	ScheduleOnInterval(interva_delay_us, interva_delay_us);
+
+	return true;
 }
 
 void WBotMainDriver::RunImpl()
 {
+	//PX4_INFO("Water Robot Main Driver running!");
 	if (should_exit()) {
+		PX4_INFO("Water Robot Main Driver quit!");
 		exit_and_cleanup();
 		return;
 	}
+
+	bool updated;
+	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
+
+	if (updated) {
+		struct wbot_moto_s data;
+		orb_copy(ORB_ID(wbot_moto), _wbot_moto_sub, &data);
+		PX4_INFO("dev(%i) Got new data: %i %i",
+			get_device_address(), data.speed[0], data.speed[1]);
+	}
+
 	//const hrt_abstime now = hrt_absolute_time();
 
+	static uint8_t rs_cache[256];
 
-	PX4_INFO("Water Robot Main Driver running!");
+	if (PX4_OK != transfer(rs_cache, rs_cache, 256) )
+	{
+		return;
+	}
+
+
 }
 
 void WBotMainDriver::print_status()
@@ -79,6 +123,7 @@ void WBotMainDriver::print_status()
 
 int WBotMainDriver::probe()
 {
+	PX4_INFO("probe");
 	//不用探测， 默认存在
 	return PX4_OK;
 }
