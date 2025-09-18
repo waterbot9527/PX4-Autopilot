@@ -257,6 +257,7 @@
 #define DRV_INS_DEVTYPE_BAHRS           0xEB
 
 #define DRV_INS_DEVTYPE_SBG		0xEC
+#define DRV_WATERBOT_MAIN_DRIVER 	0xED
 
 #define DRV_DEVTYPE_UNUSED		0xff
 

@@ -31,42 +31,56 @@
  *
  ****************************************************************************/
 
-/**
- * @file WBotMainDriver.h
- *
- * Water Robot Main Driver for PX4.
- */
+#include "WBotMainDriver.h"
+#include <px4_platform_common/module.h>
+#include <drivers/drv_sensor.h>
 
-#pragma once
 
-#include <drivers/device/spi.h>
-#include <px4_platform_common/i2c_spi_buses.h>
-#include <px4_platform_common/px4_config.h>
-#include <px4_platform_common/defines.h>
-#include <px4_platform_common/getopt.h>
-#include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
-#include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
+//extern "C" __EXPORT int wbot_main_driver_main(int argc, char *argv[]);
 
-class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
+void
+WBotMainDriver::print_usage()
 {
-public:
-	WBotMainDriver(const I2CSPIDriverConfig &config);
-	~WBotMainDriver() override;
+	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAMS_I2C_SPI_DRIVER(false, true);
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+}
 
-	static void print_usage();
+extern "C" int
+wbot_main_driver_main(int argc, char *argv[])
+{
+	using ThisDriver = WBotMainDriver;
+	BusCLIArguments cli{false, true};
+	cli.spi_mode = SPIDEV_MODE0;
+	cli.default_spi_frequency = 8000000; // 8MHz default
 
-	int init() override;
+	while (cli.getOpt(argc, argv, "") != EOF) {
+		// No additional options for now
+	}
 
+	const char *verb = cli.optArg();
 
-	void print_status() override;
+	if (!verb) {
+		ThisDriver::print_usage();
+		return -1;
+	}
 
-	void RunImpl() ;
+	// Use a custom device type for water robot
+	BusInstanceIterator iterator(MODULE_NAME, cli, DRV_WATERBOT_MAIN_DRIVER);
 
-private:
-	PX4Accelerometer _px4_accel;
-	PX4Gyroscope _px4_gyro;
+	if (!strcmp(verb, "start")) {
+		return ThisDriver::module_start(cli, iterator);
+	}
 
-	void exit_and_cleanup() override;
-	int probe() override;
-};
+	if (!strcmp(verb, "stop")) {
+		return ThisDriver::module_stop(iterator);
+	}
+
+	if (!strcmp(verb, "status")) {
+		return ThisDriver::module_status(iterator);
+	}
+
+	ThisDriver::print_usage();
+	return -1;
+}

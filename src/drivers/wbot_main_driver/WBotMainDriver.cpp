@@ -41,8 +41,11 @@
 
 using namespace time_literals;
 
-WBotMainDriver::WBotMainDriver() :
-	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default)
+WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
+	SPI(config),
+	I2CSPIDriver(config),
+	_px4_accel(get_device_id(), config.rotation),
+	_px4_gyro(get_device_id(), config.rotation)
 {
 }
 
@@ -50,77 +53,37 @@ WBotMainDriver::~WBotMainDriver()
 {
 }
 
-bool WBotMainDriver::Init()
+int WBotMainDriver::init()
 {
 	PX4_INFO("Water Robot Main Driver Initialized!");
 	ScheduleOnInterval(1_s); // Print message every 1 second
-	return true;
+	return PX4_OK;
 }
 
-void WBotMainDriver::Run()
+void WBotMainDriver::RunImpl()
 {
 	if (should_exit()) {
 		exit_and_cleanup();
 		return;
 	}
+	//const hrt_abstime now = hrt_absolute_time();
+
 
 	PX4_INFO("Water Robot Main Driver running!");
 }
 
-int WBotMainDriver::task_spawn(int argc, char *argv[])
+void WBotMainDriver::print_status()
 {
-	WBotMainDriver *instance = new WBotMainDriver();
+	PX4_INFO("Water Robot Main Driver status");
+}
 
-	if (!instance) {
-		PX4_ERR("alloc failed");
-		return -1;
-	}
-
-	if (!instance->Init()) {
-		delete instance;
-		return PX4_ERROR;
-	}
-
-	_object.store(instance);
-	_task_id = task_id_is_work_queue;
-
+int WBotMainDriver::probe()
+{
+	//不用探测， 默认存在
 	return PX4_OK;
 }
 
-int WBotMainDriver::custom_command(int argc, char *argv[])
+void WBotMainDriver::exit_and_cleanup()
 {
-	if (!strcmp(argv[0], "test")) {
-		PX4_INFO("Water Robot Main Driver custom command test!");
-		return 0;
-	}
-
-	return print_usage("unknown command");
-}
-
-int WBotMainDriver::print_usage(const char *reason)
-{
-	if (reason) {
-		PX4_WARN("%s\n", reason);
-	}
-
-	PRINT_MODULE_DESCRIPTION(
-		R"DESCR_STR(
-### Description
-Water Robot Main Driver for PX4.
-
-This driver provides main functionality for water robot operations.
-
-)DESCR_STR");
-
-	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_COMMAND_DESCR("test", "Test custom command");
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-
-	return 0;
-}
-
-extern "C" __EXPORT int wbot_main_driver_main(int argc, char *argv[])
-{
-	return WBotMainDriver::main(argc, argv);
+	I2CSPIDriverBase::exit_and_cleanup();
 }

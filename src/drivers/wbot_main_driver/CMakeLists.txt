@@ -37,6 +37,7 @@ px4_add_module(
 	COMPILE_FLAGS
 		#-DDEBUG_BUILD
 	SRCS
+		wbot_main_driver_main.cpp
 		WBotMainDriver.cpp
 		WBotMainDriver.h
 	DEPENDS
