@@ -49,6 +49,7 @@
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <uORB/topics/wbot_moto.h>
 
+
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
 {
 public:
@@ -72,6 +73,8 @@ private:
 	int _wbot_moto_sub = -1;
 
 	int parse_spi_data(uint8_t *data);
+
+	bool parse_spi_imu_data(uint8_t *data, uint32_t len);
 
 
 	void exit_and_cleanup() override;
