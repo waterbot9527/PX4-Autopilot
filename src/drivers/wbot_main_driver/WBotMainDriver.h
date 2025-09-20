@@ -71,6 +71,8 @@ private:
 	PX4Gyroscope _px4_gyro;
 	int _wbot_moto_sub = -1;
 
+	int parse_spi_data(uint8_t *data);
+
 
 	void exit_and_cleanup() override;
 	int probe() override;
