@@ -5,12 +5,16 @@
 #include <stdio.h>
 #include <stddef.h>
 
-#define IMU_TAG    0x1
-#define MS5837_TAG 0x2
-#define MOTOR0_TAG 0x3
-#define MOTOR1_TAG 0x4
-#define MOTOR2_TAG 0x5
-#define MOTOR3_TAG 0x6
+#define WBOT_SDEV_TAG_IMU    0x1
+#define WBOT_SDEV_TAG_MS5837 0x2
+#define WBOT_SDEV_TAG_MOTO0 0x3
+#define WBOT_SDEV_TAG_MOTO1 0x4
+#define WBOT_SDEV_TAG_MOTO2 0x5
+#define WBOT_SDEV_TAG_MOTO3 0x6
+
+#define  MAX_SPI_BUF_LEN (256)
+
+
 
 // 用于存放生成的 table
 static uint32_t crc32_table[256];

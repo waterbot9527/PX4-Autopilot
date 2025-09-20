@@ -36,12 +36,14 @@
  */
 
 #include "WBotMainDriver.h"
-#include "spi_mcu_def.h"
 #include <px4_platform_common/time.h>
+#include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
+#include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
+#include <string.h>
+#include "spi_mcu_def.h"
+#include "lsm6dsv16_utils.h"
 
 using namespace time_literals;
-
-
 
 WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	SPI(config),
@@ -104,21 +106,73 @@ void WBotMainDriver::RunImpl()
 		orb_copy(ORB_ID(wbot_moto), _wbot_moto_sub, &data);
 		PX4_INFO("dev(%i) Got new data: %i %i",
 			get_device_address(), data.speed[0], data.speed[1]);
+
+		// TODO: set motor/led command
 	}
 
 	//const hrt_abstime now = hrt_absolute_time();
 
-	static uint8_t rs_cache[256];
+	static uint8_t rs_cache[MAX_SPI_BUF_LEN];
 	// TODO: add cmd
-	if (PX4_OK != transfer(rs_cache, rs_cache, 256) )
+	if (PX4_OK != transfer(rs_cache, rs_cache, sizeof(rs_cache)) )
 	{
 		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
 		return;
 	}
 
+	// get data ok
+	parse_spi_data(rs_cache);
+
 
 }
 
+bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
+{
+	uint32_t cnt = len / 7;
+	if ( len % 7 != 0 )
+	{
+		return false ;
+	}
+
+	int16_t *datax, *datay, *dataz;
+	(void)datax;(void)datay;(void)dataz;
+	for (uint32_t n=0; n<cnt; n++)
+	{
+		lsm6dsv16x_fifo_out_raw_t f_data;
+		lsm6dsv16x_fifo_out_raw_parse(&f_data, &data[7*n]);
+		datax = (int16_t *)&f_data.data[0];
+		datay = (int16_t *)&f_data.data[2];
+		dataz = (int16_t *)&f_data.data[4];
+		switch (f_data.tag) {
+		case 2: //LSM6DSV16X_XL_NC_TAG:
+		{
+			lsm6dsv16x_from_fs2_to_mg(*datax);
+			lsm6dsv16x_from_fs2_to_mg(*datay);
+			lsm6dsv16x_from_fs2_to_mg(*dataz);
+			break;
+		}
+		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
+		{
+			int32_t *ts = (int32_t *)&f_data.data[0];
+			float_t aa = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
+			(void)aa;
+			break;
+		}
+		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
+		{
+			lis2mdl_from_lsb_to_mgauss(*datax);
+			lis2mdl_from_lsb_to_mgauss(*datay);
+			lis2mdl_from_lsb_to_mgauss(*dataz);
+			break;
+		}
+		default:
+			break;
+		}
+
+	}
+
+	return true;
+}
 
 // data: 接收到的 SPI 包
 // 返回值: 0 成功，负数表示错误
@@ -154,6 +208,31 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
         for (uint16_t i = 0; i < data_len; i++) {
             printf(" %02X", data[index + i]);
         }
+
+
+	switch (tag)
+	{
+	case WBOT_SDEV_TAG_IMU:
+	{
+		if ( !parse_spi_imu_data( &data[index+3], data_len) )
+		{
+			PX4_ERR("wbot main driver parse imu data error");
+		}
+		break;
+	}
+	case WBOT_SDEV_TAG_MS5837:
+		break;
+	case WBOT_SDEV_TAG_MOTO0:
+		break;
+	case WBOT_SDEV_TAG_MOTO1:
+		break;
+	case WBOT_SDEV_TAG_MOTO2:
+		break;
+	case WBOT_SDEV_TAG_MOTO3:
+		break;
+	default:
+		break;
+	}
         printf("\n");
 
         index += data_len;

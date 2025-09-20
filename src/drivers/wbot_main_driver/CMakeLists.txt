@@ -37,8 +37,14 @@ px4_add_module(
 	COMPILE_FLAGS
 		#-DDEBUG_BUILD
 	SRCS
+		lsm6dsv16_utils.c
 		wbot_main_driver_main.cpp
 		WBotMainDriver.cpp
 		WBotMainDriver.h
 	DEPENDS
+		st_lsm6dsv16x_common
+		st_lis2mdl_common
+		drivers_accelerometer
+		drivers_gyroscope
+		px4_work_queue
 	)
