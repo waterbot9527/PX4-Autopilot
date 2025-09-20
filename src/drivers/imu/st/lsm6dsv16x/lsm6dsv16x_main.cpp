@@ -19,7 +19,7 @@ extern "C" int lsm6dsv16x_main(int argc, char *argv[])
     using ThisDriver = LSM6DSV16X;
     BusCLIArguments cli{true, false};  // 启用I2C，禁用SPI
     cli.default_i2c_frequency = 400000;  // I2C默认频率400kHz
-    cli.i2c_address = ST_LSM6DSV16X::I2C_ADDR_SECONDARY;  // 默认I2C地址
+    cli.i2c_address = 0;  // 默认I2C地址
 
     while ((ch = cli.getOpt(argc, argv, "R:")) != EOF) {
         switch (ch) {
