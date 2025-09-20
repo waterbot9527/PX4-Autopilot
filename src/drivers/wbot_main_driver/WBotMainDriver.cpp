@@ -36,7 +36,7 @@
  */
 
 #include "WBotMainDriver.h"
-
+#include "spi_mcu_def.h"
 #include <px4_platform_common/time.h>
 
 using namespace time_literals;
@@ -49,6 +49,8 @@ WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	_px4_accel(get_device_id(), config.rotation),
 	_px4_gyro(get_device_id(), config.rotation)
 {
+	wbot_crc32_init_table();
+
 }
 
 WBotMainDriver::~WBotMainDriver()
@@ -75,7 +77,7 @@ int WBotMainDriver::init()
 
 bool WBotMainDriver::Reset()
 {
-	_state = STATE::RESET;
+
 	ScheduleClear();
 	ScheduleNow();
 
@@ -107,13 +109,57 @@ void WBotMainDriver::RunImpl()
 	//const hrt_abstime now = hrt_absolute_time();
 
 	static uint8_t rs_cache[256];
-
+	// TODO: add cmd
 	if (PX4_OK != transfer(rs_cache, rs_cache, 256) )
 	{
+		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
 		return;
 	}
 
 
+}
+
+
+// data: 接收到的 SPI 包
+// 返回值: 0 成功，负数表示错误
+int WBotMainDriver::parse_spi_data(uint8_t *data) {
+    if (!data) return -1; // 缓冲区太小
+
+    // 检查包头
+    if (data[0] != 0x5a || data[1] != 0x5a) return -2;
+
+    uint32_t total_len = data[2]; // copy_data 填写的总长度
+    if (total_len < 10 ) return -3; // 长度非法
+
+    // 检查包尾
+    if (data[total_len-6] != 0xa5 || data[total_len-5] != 0xa5) return -4;
+
+    // CRC 校验
+    uint32_t crc_recv = data[total_len-4] | (data[total_len-3]<<8) |
+                        (data[total_len-2]<<16) | (data[total_len-1]<<24);
+    uint32_t crc_calc = wbot_crc32(data, total_len-4);
+    if (crc_recv != crc_calc) return -5;
+
+    // 解析有效数据
+    uint32_t index = 3; // 跳过包头 + total_len 字段
+    while (index + 3 <= total_len - 6) { // 至少 3 字节包头
+        uint16_t data_len = data[index] | (data[index+1] << 8);
+        uint8_t tag = data[index+2];
+        index += 3;
+
+        if (index + data_len > total_len - 6) return -6; // 数据越界
+
+        // 处理数据
+        printf("TAG %02X, LEN %d, DATA:", tag, data_len);
+        for (uint16_t i = 0; i < data_len; i++) {
+            printf(" %02X", data[index + i]);
+        }
+        printf("\n");
+
+        index += data_len;
+    }
+
+    return 0; // 成功
 }
 
 void WBotMainDriver::print_status()
