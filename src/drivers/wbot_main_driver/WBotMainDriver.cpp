@@ -134,6 +134,21 @@ void WBotMainDriver::RunImpl()
 
 }
 
+bool WBotMainDriver::parse_spi_motor_data(uint8_t *data, uint32_t moto_index, uint32_t len)
+{
+	if  ( len != 9 || ( moto_index >= 4 ) )
+	{
+		DEVICE_DEBUG("parse motor error spi addr=%i motor_index=%i buf_len=%i",
+			get_device_address(), moto_index, len
+			);
+		return false;
+	}
+
+	// TODO only report data[0] to upper computer
+
+	return true;
+}
+
 bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 {
 	if ( len != 8 )
@@ -270,12 +285,16 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 		break;
 	}
 	case WBOT_SDEV_TAG_MOTO0:
+		parse_spi_motor_data( &data[index+3], 0, data_len);
 		break;
 	case WBOT_SDEV_TAG_MOTO1:
+		parse_spi_motor_data( &data[index+3], 1, data_len);
 		break;
 	case WBOT_SDEV_TAG_MOTO2:
+		parse_spi_motor_data( &data[index+3], 2, data_len);
 		break;
 	case WBOT_SDEV_TAG_MOTO3:
+		parse_spi_motor_data( &data[index+3], 3, data_len);
 		break;
 	default:
 		break;

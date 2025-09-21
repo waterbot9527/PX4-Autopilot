@@ -82,6 +82,8 @@ private:
 
 	bool parse_spi_ms5837_data(uint8_t *data, uint32_t len);
 
+	bool parse_spi_motor_data(uint8_t *data, uint32_t moto_index, uint32_t len);
+
 
 	void exit_and_cleanup() override;
 	int probe() override;
