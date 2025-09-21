@@ -53,6 +53,13 @@ WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 {
 	wbot_crc32_init_table();
 
+	_px4_gyro.set_scale(math::radians(1.0f)); // parse 的时候已经做过scale 处理了
+	_px4_gyro.set_range(math::radians(1000.f)); // 和单片机里的参数一致
+
+	// Accelerometer configuration 16 G range
+	_px4_accel.set_scale(CONSTANTS_ONE_G); // parse 的时候已经做过scale 处理了
+	_px4_accel.set_range(2.0f * CONSTANTS_ONE_G); // 和单片机里的参数一致
+
 }
 
 WBotMainDriver::~WBotMainDriver()
@@ -126,6 +133,25 @@ void WBotMainDriver::RunImpl()
 
 }
 
+bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
+{
+	if ( len != 8 )
+	{
+		return false;
+	}
+
+	uint32_t pressure_raw = data[0] | (data[1]<<8) | (data[2]<<16) | (data[3]<<24);
+	uint32_t temperature_raw = data[4] | (data[5]<<8) | (data[6]<<16) | (data[7]<<24);
+
+	float temperature_celsius 	= temperature_raw / 100.0;
+	float pressure_mbar   		= pressure_raw / 10.0;
+
+	(void)temperature_celsius;
+	(void)pressure_mbar;
+	//todo： publish data
+	return true;
+}
+
 bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 {
 	uint32_t cnt = len / 7;
@@ -158,11 +184,25 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			(void)aa;
 			break;
 		}
+		case 1: //LSM6DSV16X_GY_NC_TAG:
+		{
+			// datasheet : Table 3. Mechanical characteristics
+                	lsm6dsv16x_from_fs1000_to_mdps(*datax);
+                	lsm6dsv16x_from_fs1000_to_mdps(*datay);
+                	lsm6dsv16x_from_fs1000_to_mdps(*dataz);
+          		break;
+		}
 		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
 		{
+			// 无干扰下， 正常数据应在 400 mG 数量级（几百毫高斯）
+
 			lis2mdl_from_lsb_to_mgauss(*datax);
 			lis2mdl_from_lsb_to_mgauss(*datay);
 			lis2mdl_from_lsb_to_mgauss(*dataz);
+			break;
+		}
+		case 0: //LSM6DSV16X_FIFO_EMPTY:
+		{
 			break;
 		}
 		default:
@@ -221,7 +261,13 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 		break;
 	}
 	case WBOT_SDEV_TAG_MS5837:
+	{
+		if ( !parse_spi_ms5837_data( &data[index+3], data_len) )
+		{
+			PX4_ERR("wbot main driver parse ms5837 data error");
+		}
 		break;
+	}
 	case WBOT_SDEV_TAG_MOTO0:
 		break;
 	case WBOT_SDEV_TAG_MOTO1:
