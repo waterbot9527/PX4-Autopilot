@@ -47,6 +47,8 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
+#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+
 #include <uORB/topics/wbot_moto.h>
 
 
@@ -70,6 +72,8 @@ public:
 private:
 	PX4Accelerometer _px4_accel;
 	PX4Gyroscope _px4_gyro;
+	PX4Magnetometer _px4_mag;
+
 	int _wbot_moto_sub = -1;
 
 	int parse_spi_data(uint8_t *data);

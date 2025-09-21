@@ -49,7 +49,8 @@ WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	SPI(config),
 	I2CSPIDriver(config),
 	_px4_accel(get_device_id(), config.rotation),
-	_px4_gyro(get_device_id(), config.rotation)
+	_px4_gyro(get_device_id(), config.rotation),
+	_px4_mag(get_device_id(), config.rotation)
 {
 	wbot_crc32_init_table();
 

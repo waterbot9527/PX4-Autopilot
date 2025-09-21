@@ -46,5 +46,6 @@ px4_add_module(
 		st_lis2mdl_common
 		drivers_accelerometer
 		drivers_gyroscope
+		drivers_magnetometer
 		px4_work_queue
 	)

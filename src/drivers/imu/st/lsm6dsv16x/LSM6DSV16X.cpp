@@ -1,5 +1,9 @@
 #include "LSM6DSV16X.hpp"
 
+#include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
+#include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
+#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+
 using namespace time_literals;
 
 static constexpr int16_t combine(uint8_t msb, uint8_t lsb)
