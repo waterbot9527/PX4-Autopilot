@@ -75,6 +75,7 @@ private:
 	int parse_spi_data(uint8_t *data);
 
 	bool parse_spi_imu_data(uint8_t *data, uint32_t len);
+
 	bool parse_spi_ms5837_data(uint8_t *data, uint32_t len);
 
 
