@@ -119,6 +119,8 @@
 # include <uORB/topics/debug_vect.h>
 #endif // !CONSTRAINED_FLASH
 
+# include <uORB/topics/wbot_ctrl_moto.h>
+
 using namespace time_literals;
 
 class Mavlink;
@@ -157,6 +159,8 @@ private:
 	void handle_message(mavlink_message_t *msg);
 	void handle_messages_in_gimbal_mode(mavlink_message_t &msg);
 
+	void handle_message_waterbot_ctl_motor(mavlink_message_t *msg);
+	void handle_message_waterbot_ctl_led(mavlink_message_t *msg);
 	void handle_message_adsb_vehicle(mavlink_message_t *msg);
 	void handle_message_att_pos_mocap(mavlink_message_t *msg);
 	void handle_message_battery_status(mavlink_message_t *msg);

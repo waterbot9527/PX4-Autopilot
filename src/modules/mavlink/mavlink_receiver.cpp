@@ -330,6 +330,12 @@ MavlinkReceiver::handle_message(mavlink_message_t *msg)
 		handle_message_set_velocity_limits(msg);
 		break;
 #endif
+	case MAVLINK_MSG_ID_WBOT_CONTROL_MOTOR:
+		handle_message_waterbot_ctl_motor(msg);
+		break;
+	case MAVLINK_MSG_ID_WBOT_CONTROL_LED:
+		handle_message_waterbot_ctl_led(msg);
+		break;
 
 	default:
 		break;
@@ -3531,4 +3537,41 @@ void MavlinkReceiver::stop()
 {
 	_should_exit.store(true);
 	pthread_join(_thread, nullptr);
+}
+
+void MavlinkReceiver::handle_message_waterbot_ctl_led(mavlink_message_t *msg)
+{
+
+}
+
+void MavlinkReceiver::handle_message_waterbot_ctl_motor(mavlink_message_t *msg)
+{
+	mavlink_wbot_control_motor_t  motor_msg;
+	mavlink_msg_wbot_control_motor_decode(msg, &motor_msg);
+
+
+
+	static const int MAX_WBOT_MOTOR = 4;
+	static const int MAX_WBOT_BOARD = 2;
+
+	auto now = hrt_absolute_time();
+
+	for ( int b = 0 ; b < MAX_WBOT_BOARD; b++)
+	{
+		struct wbot_ctrl_moto_s motor_topic{};
+
+		for (int n = 0; n < MAX_WBOT_MOTOR; n++) {
+			motor_topic.speed[n] = motor_msg.speed[4*b + n % 4];
+			motor_topic.direction[n] = motor_msg.direction[4*b + n % 4];
+			motor_topic.timestamp = now;
+		}
+		// 发布 topic
+		orb_advert_t pub = orb_advertise_multi(ORB_ID(wbot_ctrl_moto), &motor_topic, &b);
+
+		if (pub != nullptr) {
+			PX4_INFO("Published wbot_moto message to instance %d", b);
+		} else {
+			PX4_ERR("Failed to publish wbot_moto message");
+		}
+	}
 }
