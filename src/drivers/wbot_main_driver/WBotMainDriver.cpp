@@ -80,7 +80,7 @@ int WBotMainDriver::init()
 	}
 	DEVICE_DEBUG("SPI::init ok (%i)", ret);
 	DEVICE_DEBUG("spi dev id= %i addr= %i", get_device_id(), get_device_address());
-	_wbot_moto_sub = orb_subscribe_multi(ORB_ID(wbot_moto), get_device_address());
+	_wbot_moto_sub = orb_subscribe_multi(ORB_ID(wbot_ctrl_moto), get_device_address());
 
 	return Reset() ? 0 : -1;
 }
@@ -110,8 +110,8 @@ void WBotMainDriver::RunImpl()
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
 
 	if (updated) {
-		struct wbot_moto_s data;
-		orb_copy(ORB_ID(wbot_moto), _wbot_moto_sub, &data);
+		struct wbot_ctrl_moto_s data;
+		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
 		PX4_INFO("dev(%i) Got new data: %i %i",
 			get_device_address(), data.speed[0], data.speed[1]);
 

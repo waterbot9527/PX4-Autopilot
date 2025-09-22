@@ -49,7 +49,7 @@
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
 
-#include <uORB/topics/wbot_moto.h>
+#include <uORB/topics/wbot_ctrl_moto.h>
 
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
