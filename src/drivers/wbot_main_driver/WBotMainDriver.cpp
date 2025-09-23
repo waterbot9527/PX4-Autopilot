@@ -128,11 +128,6 @@ void WBotMainDriver::RunImpl()
 		return;
 	}
 
-	static int cnt = 0;
-	if ( cnt++ % 1024 == 0 ) {
-		// print data
-	}
-
 
 	// get data ok
 	parse_spi_data(rs_cache);
