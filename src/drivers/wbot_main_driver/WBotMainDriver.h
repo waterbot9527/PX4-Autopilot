@@ -74,7 +74,9 @@ private:
 	PX4Gyroscope _px4_gyro;
 	PX4Magnetometer _px4_mag;
 
-	uint8_t rs_cache[256];
+	static const int  SPI_BUF_SIZE = 256;
+	uint8_t send_recv_cache[SPI_BUF_SIZE];
+	uint32_t test_cnt = 0;
 
 	int _wbot_moto_sub = -1;
 

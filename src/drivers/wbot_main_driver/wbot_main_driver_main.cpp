@@ -53,7 +53,7 @@ wbot_main_driver_main(int argc, char *argv[])
 	using ThisDriver = WBotMainDriver;
 	BusCLIArguments cli{false, true};
 	cli.spi_mode = SPIDEV_MODE0;
-	cli.default_spi_frequency = 8000000; // 8MHz default
+	cli.default_spi_frequency = 1000*1000*10; // 8MHz default
 
 	while (cli.getOpt(argc, argv, "") != EOF) {
 		// No additional options for now

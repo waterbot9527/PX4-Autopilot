@@ -89,9 +89,8 @@ bool WBotMainDriver::Reset()
 {
 
 	ScheduleClear();
-	ScheduleNow();
 
-	uint32_t interva_delay_us = 1000*1000;
+	uint32_t interva_delay_us = 2*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
 
 	return true;
@@ -99,7 +98,7 @@ bool WBotMainDriver::Reset()
 
 void WBotMainDriver::RunImpl()
 {
-	//PX4_INFO("Water Robot Main Driver running!");
+	// PX4_INFO("Water Robot Main Driver running!");
 	if (should_exit()) {
 		PX4_INFO("Water Robot Main Driver quit!");
 		exit_and_cleanup();
@@ -122,15 +121,32 @@ void WBotMainDriver::RunImpl()
 
 
 	// TODO: add cmd
-	if (PX4_OK != transfer(rs_cache, rs_cache, sizeof(rs_cache)) )
+	if (PX4_OK != transfer(send_recv_cache, send_recv_cache, sizeof(send_recv_cache)) )
 	{
 		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
 		return;
 	}
 
+	if ( test_cnt++ % 512 == 0 &&  get_device_address() == 1 )
+	//if ( get_device_address() == 1 )
+	{
+		uint8_t id = get_device_address();
+		PX4_INFO("spi %d send_recv_cache recv bytes:",id);
+		for (int i = 0; i < SPI_BUF_SIZE; i++) {
+			if (i % 16 == 0) {
+				PX4_INFO("\n ");  // 换行后显示起始索引
+			}
+			printf("%02x ", send_recv_cache[i]);
+		}
+		PX4_INFO("");
+
+		int ret = parse_spi_data(send_recv_cache);
+		printf("parse_spi_data=%d\n",ret);
+	}
 
 	// get data ok
-	parse_spi_data(rs_cache);
+
+
 
 
 }
@@ -192,6 +208,11 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			lsm6dsv16x_from_fs2_to_mg(*datax);
 			lsm6dsv16x_from_fs2_to_mg(*datay);
 			lsm6dsv16x_from_fs2_to_mg(*dataz);
+
+			printf("accl x,y,z=%f %f %f\n",
+				(double)lsm6dsv16x_from_fs2_to_mg(*datax),
+			(double)lsm6dsv16x_from_fs2_to_mg(*datay),
+			(double)lsm6dsv16x_from_fs2_to_mg(*dataz));
 			break;
 		}
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
@@ -207,6 +228,11 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
                 	lsm6dsv16x_from_fs1000_to_mdps(*datax);
                 	lsm6dsv16x_from_fs1000_to_mdps(*datay);
                 	lsm6dsv16x_from_fs1000_to_mdps(*dataz);
+			printf("gray x,y,z=%f %f %f\n",
+				(double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
+				(double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
+				(double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
+			);
           		break;
 		}
 		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
@@ -216,6 +242,12 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			lis2mdl_from_lsb_to_mgauss(*datax);
 			lis2mdl_from_lsb_to_mgauss(*datay);
 			lis2mdl_from_lsb_to_mgauss(*dataz);
+
+			printf("guass x,y,z=%f %f %f\n",
+				(double)lis2mdl_from_lsb_to_mgauss(*datax),
+				(double)lis2mdl_from_lsb_to_mgauss(*datay),
+				(double)lis2mdl_from_lsb_to_mgauss(*dataz)
+			);
 			break;
 		}
 		case 0: //LSM6DSV16X_FIFO_EMPTY:
@@ -234,13 +266,17 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 // data: 接收到的 SPI 包
 // 返回值: 0 成功，负数表示错误
 int WBotMainDriver::parse_spi_data(uint8_t *data) {
+
+    constexpr uint32_t packet_head_size = 5 ;
+    constexpr uint32_t sensor_data_head_size = 3 ;
+
     if (!data) return -1; // 缓冲区太小
 
     // 检查包头
-    if (data[0] != 0x5a || data[1] != 0x5a) return -2;
+    if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d ) return -2;
 
-    uint32_t total_len = data[2]; // copy_data 填写的总长度
-    if (total_len < 10 ) return -3; // 长度非法
+    uint32_t total_len = data[4]; // copy_data 填写的总长度
+    if (total_len < 11 ) return -3; // 长度非法
 
     // 检查包尾
     if (data[total_len-6] != 0xa5 || data[total_len-5] != 0xa5) return -4;
@@ -249,54 +285,58 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
     uint32_t crc_recv = data[total_len-4] | (data[total_len-3]<<8) |
                         (data[total_len-2]<<16) | (data[total_len-1]<<24);
     uint32_t crc_calc = wbot_crc32(data, total_len-4);
+    printf("%08x %08x\n", crc_recv, crc_calc);
     if (crc_recv != crc_calc) return -5;
 
     // 解析有效数据
-    uint32_t index = 3; // 跳过包头 + total_len 字段
-    while (index + 3 <= total_len - 6) { // 至少 3 字节包头
+    uint32_t index = packet_head_size; // 跳过包头 字段
+    while (index + packet_head_size <= total_len - 6) { // skip 包头
         uint16_t data_len = data[index] | (data[index+1] << 8);
         uint8_t tag = data[index+2];
-        index += 3;
+        index += sensor_data_head_size;  // index is the  real data offset now
 
-        if (index + data_len > total_len - 6) return -6; // 数据越界
+        if (index + data_len > total_len - 6) {
+		PX4_ERR("index,data_len= %i %i, total_len-6=%i\n", index, data_len, total_len-6);
+		return -6; // 数据越界
+	}
 
         // 处理数据
         printf("TAG %02X, LEN %d, DATA:", tag, data_len);
         for (uint16_t i = 0; i < data_len; i++) {
             printf(" %02X", data[index + i]);
         }
-
+	printf("\n");
 
 	switch (tag)
 	{
 	case WBOT_SDEV_TAG_IMU:
 	{
-		if ( !parse_spi_imu_data( &data[index+3], data_len) )
+		if ( !parse_spi_imu_data( &data[index], data_len) )
 		{
 			PX4_ERR("wbot main driver parse imu data error");
 		}
 		break;
 	}
-	case WBOT_SDEV_TAG_MS5837:
-	{
-		if ( !parse_spi_ms5837_data( &data[index+3], data_len) )
-		{
-			PX4_ERR("wbot main driver parse ms5837 data error");
-		}
-		break;
-	}
-	case WBOT_SDEV_TAG_MOTO0:
-		parse_spi_motor_data( &data[index+3], 0, data_len);
-		break;
-	case WBOT_SDEV_TAG_MOTO1:
-		parse_spi_motor_data( &data[index+3], 1, data_len);
-		break;
-	case WBOT_SDEV_TAG_MOTO2:
-		parse_spi_motor_data( &data[index+3], 2, data_len);
-		break;
-	case WBOT_SDEV_TAG_MOTO3:
-		parse_spi_motor_data( &data[index+3], 3, data_len);
-		break;
+	// case WBOT_SDEV_TAG_MS5837:
+	// {
+	// 	if ( !parse_spi_ms5837_data( &data[index+3], data_len) )
+	// 	{
+	// 		PX4_ERR("wbot main driver parse ms5837 data error");
+	// 	}
+	// 	break;
+	// }
+	// case WBOT_SDEV_TAG_MOTO0:
+	// 	parse_spi_motor_data( &data[index+3], 0, data_len);
+	// 	break;
+	// case WBOT_SDEV_TAG_MOTO1:
+	// 	parse_spi_motor_data( &data[index+3], 1, data_len);
+	// 	break;
+	// case WBOT_SDEV_TAG_MOTO2:
+	// 	parse_spi_motor_data( &data[index+3], 2, data_len);
+	// 	break;
+	// case WBOT_SDEV_TAG_MOTO3:
+	// 	parse_spi_motor_data( &data[index+3], 3, data_len);
+	// 	break;
 	default:
 		break;
 	}
