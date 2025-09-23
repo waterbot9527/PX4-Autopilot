@@ -74,6 +74,8 @@ private:
 	PX4Gyroscope _px4_gyro;
 	PX4Magnetometer _px4_mag;
 
+	uint8_t rs_cache[256];
+
 	int _wbot_moto_sub = -1;
 
 	int parse_spi_data(uint8_t *data);

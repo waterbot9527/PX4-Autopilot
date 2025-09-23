@@ -120,13 +120,19 @@ void WBotMainDriver::RunImpl()
 
 	//const hrt_abstime now = hrt_absolute_time();
 
-	static uint8_t rs_cache[MAX_SPI_BUF_LEN];
+
 	// TODO: add cmd
 	if (PX4_OK != transfer(rs_cache, rs_cache, sizeof(rs_cache)) )
 	{
 		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
 		return;
 	}
+
+	static int cnt = 0;
+	if ( cnt++ % 1024 == 0 ) {
+		// print data
+	}
+
 
 	// get data ok
 	parse_spi_data(rs_cache);
