@@ -40,10 +40,12 @@
 #include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
 #include <string.h>
+#include "wbot_mcu_cmd.hpp"
 #include "spi_mcu_def.h"
 #include "lsm6dsv16_utils.h"
 
 using namespace time_literals;
+
 
 WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	SPI(config),
@@ -81,6 +83,7 @@ int WBotMainDriver::init()
 	DEVICE_DEBUG("SPI::init ok (%i)", ret);
 	DEVICE_DEBUG("spi dev id= %i addr= %i", get_device_id(), get_device_address());
 	_wbot_moto_sub = orb_subscribe_multi(ORB_ID(wbot_ctrl_moto), get_device_address());
+	_wbot_led_sub = orb_subscribe_multi(ORB_ID(wbot_ctrl_led), get_device_address());
 
 	return Reset() ? 0 : -1;
 }
@@ -106,16 +109,42 @@ void WBotMainDriver::RunImpl()
 	}
 
 	bool updated;
+	uint32_t cmd_size  = 1;
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
-
 	if (updated) {
 		struct wbot_ctrl_moto_s data;
 		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
 		PX4_INFO("dev(%i) Got new data: %i %i",
 			get_device_address(), data.speed[0], data.speed[1]);
 
-		// TODO: set motor/led command
+		uint32_t board_id = get_device_address();
+
+		for ( int i2c_index = 0; i2c_index<4 && board_id < 2; i2c_index++)
+		{
+			uint8_t speed = data.speed[i2c_index + board_id*4];
+			uint8_t direction = data.direction[i2c_index + board_id*4];
+
+			McuCmdHelper::set_motor_cmd( &send_recv_cache[cmd_size] , speed, direction, i2c_index );
+			cmd_size += 2;
+		}
 	}
+	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
+	if (updated) {
+		struct wbot_ctrl_led_s data;
+		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
+		McuCmdHelper::set_led_value( &send_recv_cache[cmd_size] , data.light_value );
+		cmd_size += 2;
+	}
+	if ( cmd_size > 1 )
+	{
+		send_recv_cache[0] = cmd_size;
+		uint32_t crc_calc = wbot_crc32(send_recv_cache, cmd_size);
+
+		memcpy( &send_recv_cache[cmd_size], &crc_calc, sizeof(uint32_t));
+	} else {
+		send_recv_cache[0] = 0;
+	}
+
 
 	//const hrt_abstime now = hrt_absolute_time();
 

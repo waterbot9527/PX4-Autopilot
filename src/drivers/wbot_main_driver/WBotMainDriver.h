@@ -50,6 +50,7 @@
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
 
 #include <uORB/topics/wbot_ctrl_moto.h>
+#include <uORB/topics/wbot_ctrl_led.h>
 
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
@@ -79,6 +80,7 @@ private:
 	uint32_t test_cnt = 0;
 
 	int _wbot_moto_sub = -1;
+	int _wbot_led_sub = -1;
 
 	int parse_spi_data(uint8_t *data);
 
