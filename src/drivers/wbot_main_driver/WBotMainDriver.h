@@ -80,6 +80,10 @@ private:
 
 	int _wbot_moto_sub = -1;
 
+	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
+	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
+	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
+
 	int parse_spi_data(uint8_t *data);
 
 	bool parse_spi_imu_data(uint8_t *data, uint32_t len);

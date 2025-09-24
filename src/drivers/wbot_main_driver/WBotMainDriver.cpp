@@ -45,6 +45,9 @@
 
 using namespace time_literals;
 
+#define WMD_DEBUG(...) do {} while(0)
+//#define WMD_DEBUG(...) printf(__VA_ARGS__)
+
 WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
 	SPI(config),
 	I2CSPIDriver(config),
@@ -127,22 +130,38 @@ void WBotMainDriver::RunImpl()
 		return;
 	}
 
-	if ( test_cnt++ % 512 == 0 &&  get_device_address() == 1 )
-	//if ( get_device_address() == 1 )
-	{
-		uint8_t id = get_device_address();
-		PX4_INFO("spi %d send_recv_cache recv bytes:",id);
-		for (int i = 0; i < SPI_BUF_SIZE; i++) {
-			if (i % 16 == 0) {
-				PX4_INFO("\n ");  // 换行后显示起始索引
-			}
-			printf("%02x ", send_recv_cache[i]);
-		}
-		PX4_INFO("");
+	//if ( test_cnt++ % 512 == 0 &&  get_device_address() == 1 )
+	int ret = parse_spi_data(send_recv_cache);
 
-		int ret = parse_spi_data(send_recv_cache);
-		printf("parse_spi_data=%d\n",ret);
+	switch (ret)
+	{
+	case -2:
+		perf_count(_bad_packhead_perf);
+		break;
+	case -4:
+		perf_count(_bad_packtail_perf);
+		break;
+	case -5:
+		perf_count(_bad_crc_err_perf);
+		break;
+	default:
+		break;
 	}
+
+	if ( ret < 0 )
+	{
+
+		// uint8_t id = get_device_address();
+		// PX4_INFO("spi %d send_recv_cache recv bytes:",id);
+		// for (int i = 0; i < SPI_BUF_SIZE; i++) {
+		// 	if (i % 16 == 0) {
+		// 		PX4_INFO("\n ");  // 换行后显示起始索引
+		// 	}
+		// 	PX4_INFO("%02x ", send_recv_cache[i]);
+		// }
+		// PX4_INFO("");
+	}
+
 
 	// get data ok
 
@@ -153,7 +172,7 @@ void WBotMainDriver::RunImpl()
 
 bool WBotMainDriver::parse_spi_motor_data(uint8_t *data, uint32_t moto_index, uint32_t len)
 {
-	if  ( len != 9 || ( moto_index >= 4 ) )
+	if  ( len != MOTOR_DATA_SIZE || ( moto_index >= MOTOR_MAX_NUM ) )
 	{
 		DEVICE_DEBUG("parse motor error spi addr=%i motor_index=%i buf_len=%i",
 			get_device_address(), moto_index, len
@@ -170,14 +189,17 @@ bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 {
 	if ( len != 8 )
 	{
+		PX4_INFO("ms5837_data ! = 8,len =  %d ",len);
 		return false;
 	}
+
 
 	uint32_t pressure_raw = data[0] | (data[1]<<8) | (data[2]<<16) | (data[3]<<24);
 	uint32_t temperature_raw = data[4] | (data[5]<<8) | (data[6]<<16) | (data[7]<<24);
 
 	float temperature_celsius 	= temperature_raw / 100.0;
 	float pressure_mbar   		= pressure_raw / 10.0;
+	WMD_DEBUG("temperature = %f  pressure_mbar = %f \n", (double)temperature_celsius,(double) pressure_mbar);
 
 	(void)temperature_celsius;
 	(void)pressure_mbar;
@@ -209,10 +231,10 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			lsm6dsv16x_from_fs2_to_mg(*datay);
 			lsm6dsv16x_from_fs2_to_mg(*dataz);
 
-			printf("accl x,y,z=%f %f %f\n",
-				(double)lsm6dsv16x_from_fs2_to_mg(*datax),
-			(double)lsm6dsv16x_from_fs2_to_mg(*datay),
-			(double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+			// printf("accl x,y,z=%f %f %f\n",
+			// 	(double)lsm6dsv16x_from_fs2_to_mg(*datax),
+			// (double)lsm6dsv16x_from_fs2_to_mg(*datay),
+			// (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
 			break;
 		}
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
@@ -228,7 +250,7 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
                 	lsm6dsv16x_from_fs1000_to_mdps(*datax);
                 	lsm6dsv16x_from_fs1000_to_mdps(*datay);
                 	lsm6dsv16x_from_fs1000_to_mdps(*dataz);
-			printf("gray x,y,z=%f %f %f\n",
+			WMD_DEBUG("gray x,y,z=%f %f %f\n",
 				(double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
 				(double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
 				(double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
@@ -243,7 +265,7 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			lis2mdl_from_lsb_to_mgauss(*datay);
 			lis2mdl_from_lsb_to_mgauss(*dataz);
 
-			printf("guass x,y,z=%f %f %f\n",
+			WMD_DEBUG("guass x,y,z=%f %f %f\n",
 				(double)lis2mdl_from_lsb_to_mgauss(*datax),
 				(double)lis2mdl_from_lsb_to_mgauss(*datay),
 				(double)lis2mdl_from_lsb_to_mgauss(*dataz)
@@ -285,7 +307,7 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
     uint32_t crc_recv = data[total_len-4] | (data[total_len-3]<<8) |
                         (data[total_len-2]<<16) | (data[total_len-1]<<24);
     uint32_t crc_calc = wbot_crc32(data, total_len-4);
-    printf("%08x %08x\n", crc_recv, crc_calc);
+
     if (crc_recv != crc_calc) return -5;
 
     // 解析有效数据
@@ -301,11 +323,11 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 	}
 
         // 处理数据
-        printf("TAG %02X, LEN %d, DATA:", tag, data_len);
-        for (uint16_t i = 0; i < data_len; i++) {
-            printf(" %02X", data[index + i]);
-        }
-	printf("\n");
+        // DEVICE_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
+        // for (uint16_t i = 0; i < data_len; i++) {
+        //     DEVICE_DEBUG(" %02X", data[index + i]);
+        // }
+	// DEVICE_DEBUG("\n");
 
 	switch (tag)
 	{
@@ -313,34 +335,45 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 	{
 		if ( !parse_spi_imu_data( &data[index], data_len) )
 		{
-			PX4_ERR("wbot main driver parse imu data error");
+			DEVICE_DEBUG("wbot main driver parse imu data error");
 		}
 		break;
 	}
-	// case WBOT_SDEV_TAG_MS5837:
-	// {
-	// 	if ( !parse_spi_ms5837_data( &data[index+3], data_len) )
-	// 	{
-	// 		PX4_ERR("wbot main driver parse ms5837 data error");
-	// 	}
-	// 	break;
-	// }
-	// case WBOT_SDEV_TAG_MOTO0:
-	// 	parse_spi_motor_data( &data[index+3], 0, data_len);
-	// 	break;
-	// case WBOT_SDEV_TAG_MOTO1:
-	// 	parse_spi_motor_data( &data[index+3], 1, data_len);
-	// 	break;
-	// case WBOT_SDEV_TAG_MOTO2:
-	// 	parse_spi_motor_data( &data[index+3], 2, data_len);
-	// 	break;
-	// case WBOT_SDEV_TAG_MOTO3:
-	// 	parse_spi_motor_data( &data[index+3], 3, data_len);
-	// 	break;
+	case WBOT_SDEV_TAG_MS5837:
+	{
+		if ( !parse_spi_ms5837_data( &data[index], data_len) )
+		{
+			DEVICE_DEBUG("wbot main driver parse ms5837 data error");
+		}
+		break;
+	}
+	case WBOT_SDEV_TAG_MOTO0:
+		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_0, data_len))
+		{
+			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_0);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO1:
+		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_1, data_len))
+		{
+			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_1);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO2:
+		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_2, data_len))
+		{
+			DEVICE_DEBUG("motor %d data recv error ",MOTOR_INDEX_2);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO3:
+		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_3, data_len))
+		{
+			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_3);
+		}
+		break;
 	default:
 		break;
 	}
-        printf("\n");
 
         index += data_len;
     }
@@ -351,6 +384,12 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 void WBotMainDriver::print_status()
 {
 	PX4_INFO("Water Robot Main Driver status");
+	I2CSPIDriverBase::print_status();
+
+	perf_print_counter(_bad_packhead_perf);
+	perf_print_counter(_bad_packtail_perf);
+	perf_print_counter(_bad_crc_err_perf);
+
 }
 
 int WBotMainDriver::probe()

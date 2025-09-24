@@ -12,7 +12,16 @@
 #define WBOT_SDEV_TAG_MOTO2 0x5
 #define WBOT_SDEV_TAG_MOTO3 0x6
 
+#define  MOTOR_INDEX_0 (0)
+#define  MOTOR_INDEX_1 (1)
+#define  MOTOR_INDEX_2 (2)
+#define  MOTOR_INDEX_3 (3)
+
+
 #define  MAX_SPI_BUF_LEN (256)
+#define  MOTOR_DATA_SIZE (10)
+#define  MOTOR_MAX_NUM (4)
+
 
 
 
