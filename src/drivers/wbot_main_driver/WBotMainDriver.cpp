@@ -89,8 +89,8 @@ int WBotMainDriver::init()
 	}
 	DEVICE_DEBUG("SPI::init ok (%i)", ret);
 	DEVICE_DEBUG("spi dev id= %i addr= %i", get_device_id(), get_device_address());
-	_wbot_moto_sub = orb_subscribe_multi(ORB_ID(wbot_ctrl_moto), get_device_address());
-	_wbot_led_sub = orb_subscribe_multi(ORB_ID(wbot_ctrl_led), get_device_address());
+	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
+	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
 	return Reset() ? 0 : -1;
 }
@@ -147,11 +147,21 @@ void WBotMainDriver::RunImpl()
 		send_recv_cache[0] = cmd_size;
 		uint32_t crc_calc = wbot_crc32(send_recv_cache, cmd_size);
 
+		printf("crc (%d)= \n", get_device_address() );
+		for(uint32_t n = 0; n < cmd_size; n++)
+		{
+			printf("0x%02x,", send_recv_cache[n]);
+		}
+		printf("\ncrc = %x\n", crc_calc);
+
 		memcpy( &send_recv_cache[cmd_size], &crc_calc, sizeof(uint32_t));
 		cmd_size += sizeof(uint32_t);
 	} else {
 		send_recv_cache[0] = 0;
 	}
+
+	if ( send_recv_cache[0] == 0)
+		return;
 
 
 	// TODO: add cmd
