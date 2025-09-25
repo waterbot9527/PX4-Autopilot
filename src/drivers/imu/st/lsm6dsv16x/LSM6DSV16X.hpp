@@ -8,6 +8,8 @@
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/i2c_spi_buses.h>
+#include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
+#include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
 
 
 class LSM6DSV16X : public device::I2C, public I2CSPIDriver<LSM6DSV16X>

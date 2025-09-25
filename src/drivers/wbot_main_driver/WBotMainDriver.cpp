@@ -148,7 +148,7 @@ void WBotMainDriver::RunImpl()
 		uint32_t crc_calc = wbot_crc32(send_recv_cache, cmd_size);
 
 		memcpy( &send_recv_cache[cmd_size], &crc_calc, sizeof(uint32_t));
-		cmd_size += 4;
+		cmd_size += sizeof(uint32_t);
 	} else {
 		send_recv_cache[0] = 0;
 	}

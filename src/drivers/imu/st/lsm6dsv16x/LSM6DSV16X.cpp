@@ -1,9 +1,5 @@
 #include "LSM6DSV16X.hpp"
 
-#include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
-#include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
-#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
-
 using namespace time_literals;
 
 static constexpr int16_t combine(uint8_t msb, uint8_t lsb)
@@ -73,26 +69,20 @@ int LSM6DSV16X::probe()
 {
     //根据单片机代码来 probe
 
-    PX4_INFO("Using bus %d, address 0x%02X", get_device_bus(), get_device_address());
+    // PX4_INFO("Using bus %d, address 0x%02X", get_device_bus(), get_device_address());
 
-    uint8_t cmd = 0x0F;    // WHO_AM_I register
-    uint8_t whoami = 0;
+    // uint8_t whoami = 0;
 
-    // 发送 1 字节寄存器地址，然后读 1 字节
-    int ret = transfer(&cmd, 1, &whoami, 1);
+    // // 发送 1 字节寄存器地址，然后读 1 字节
+    // // Platform_read(,);
 
-    if (ret != PX4_OK) {
-        PX4_ERR("I2C transfer failed");
-        return PX4_ERROR;
-    }
+    // PX4_INFO("WHO_AM_I = 0x%02X", whoami);
 
-    PX4_INFO("WHO_AM_I = 0x%02X", whoami);
-
-    if (whoami != 0x70) {
-        PX4_ERR("Unexpected WHO_AM_I 0x%02X", whoami);
-        return PX4_ERROR;
-    }
-    PX4_INFO("READ LSM6DSV16X WHO_AM_I SUCCESS");
+    // if (whoami != 0x70) {
+    //     PX4_ERR("Unexpected WHO_AM_I 0x%02X", whoami);
+    //     return PX4_ERROR;
+    // }
+    // PX4_INFO("READ LSM6DSV16X WHO_AM_I SUCCESS");
 
     return PX4_OK;
 }
@@ -128,15 +118,13 @@ bool LSM6DSV16X::Configure()
 
 // int32_t LSM6DSV16X::Platform_read(uint8_t reg, uint8_t *bufp, uint16_t len)
 // {
-//     int fd = *(int *)handle;
-
 //     // 先写入要读取的寄存器地址
-//     transfer(const uint8_t *send, const unsigned send_len, uint8_t *recv, const unsigned recv_len)
-//     if (transfer(&reg, 1) != 1) {
-//         return -1;
-//     }
+//     uint8_t Register = reg;
 
-//     // 读取数据
-//     int ret = read(fd, bufp, len);
-//     return (ret == len) ? 0 : -1;
+//     uint8_t ret = transfer(&Register, sizeof(Register), bufp, len);
+//     if (ret != PX4_OK) {
+//         PX4_ERR("I2C transfer failed");
+//         return PX4_ERROR;
+//     }
+//     return PX4_OK;
 // }
