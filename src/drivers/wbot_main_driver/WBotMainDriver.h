@@ -50,6 +50,7 @@
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
 
 #include <uORB/topics/wbot_ctrl_moto.h>
+#include <uORB/topics/debug_key_value.h>
 
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
@@ -73,6 +74,11 @@ private:
 	PX4Accelerometer _px4_accel;
 	PX4Gyroscope _px4_gyro;
 	PX4Magnetometer _px4_mag;
+
+	orb_advert_t _water_press_pub = nullptr;
+
+
+	hrt_abstime _now = hrt_absolute_time();
 
 	static const int  SPI_BUF_SIZE = 256;
 	uint8_t send_recv_cache[SPI_BUF_SIZE];

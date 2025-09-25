@@ -43,6 +43,9 @@
 #include "spi_mcu_def.h"
 #include "lsm6dsv16_utils.h"
 
+
+
+
 using namespace time_literals;
 
 #define WMD_DEBUG(...) do {} while(0)
@@ -120,9 +123,6 @@ void WBotMainDriver::RunImpl()
 		// TODO: set motor/led command
 	}
 
-	//const hrt_abstime now = hrt_absolute_time();
-
-
 	// TODO: add cmd
 	if (PX4_OK != transfer(send_recv_cache, send_recv_cache, sizeof(send_recv_cache)) )
 	{
@@ -130,7 +130,7 @@ void WBotMainDriver::RunImpl()
 		return;
 	}
 
-	//if ( test_cnt++ % 512 == 0 &&  get_device_address() == 1 )
+	_now = hrt_absolute_time();
 	int ret = parse_spi_data(send_recv_cache);
 
 	switch (ret)
@@ -204,6 +204,18 @@ bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 	(void)temperature_celsius;
 	(void)pressure_mbar;
 	//todo： publish data
+
+	debug_key_value_s pressure_mbar_msg ;
+	snprintf(pressure_mbar_msg.key, 10, "x");
+	pressure_mbar_msg.timestamp = _now;
+	pressure_mbar_msg.value = pressure_mbar;
+
+	if ( _water_press_pub == nullptr)
+		_water_press_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_mbar_msg);
+	else
+		orb_publish(ORB_ID(debug_key_value), _water_press_pub, &pressure_mbar_msg);
+
+
 	return true;
 }
 
