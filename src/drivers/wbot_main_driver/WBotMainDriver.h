@@ -51,6 +51,7 @@
 
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
+#include <uORB/topics/wbot_ctrl_led.h>
 
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
@@ -85,6 +86,7 @@ private:
 	uint32_t test_cnt = 0;
 
 	int _wbot_moto_sub = -1;
+	int _wbot_led_sub = -1;
 
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
