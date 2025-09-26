@@ -35,10 +35,10 @@ int LSM6DSV16X::init()
     int ret = I2C::init();
 
     if (ret != PX4_OK) {
-        DEVICE_DEBUG("I2C::init failed (%i)", ret);
+        PX4_INFO("I2C::init failed (%i)", ret);
         return ret;
     }
-    DEVICE_DEBUG("I2C::init seccess (%i)", ret);
+    PX4_INFO("I2C::init seccess (%i)", ret);
 
     return Reset() ? 0 : -1;
 }
@@ -47,7 +47,9 @@ bool LSM6DSV16X::Reset()
 {
     _state = STATE::RESET;
     ScheduleClear();
-    ScheduleNow();
+
+	uint32_t interva_delay_us = 2*1000;
+	ScheduleOnInterval(interva_delay_us, interva_delay_us);
     return true;
 }
 
@@ -103,6 +105,8 @@ int LSM6DSV16X::probe()
 void LSM6DSV16X::RunImpl()
 {
     //const hrt_abstime now = hrt_absolute_time();
+
+    PX4_INFO("running");
 
 }
 

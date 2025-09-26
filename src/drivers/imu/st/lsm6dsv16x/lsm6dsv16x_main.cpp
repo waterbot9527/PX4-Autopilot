@@ -22,6 +22,7 @@ extern "C" int lsm6dsv16x_main(int argc, char *argv[])
     cli.default_i2c_frequency = 400;  // I2C默认频率400kHz
     cli.i2c_address = 0x6B;  // 默认I2C地址
     cli.bus_option = I2CSPIBusOption::I2CInternal;
+    PX4_INFO("IMU START\n");
 
 
     while ((ch = cli.getOpt(argc, argv, "R:")) != EOF) {
