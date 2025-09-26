@@ -2,6 +2,9 @@
 
 using namespace time_literals;
 
+stmdev_ctx_t LSM6DSV16X::lsm6dsv16x_ctx = {};
+stmdev_ctx_t LSM6DSV16X::lis2mdl_ctx = {};
+
 static constexpr int16_t combine(uint8_t msb, uint8_t lsb)
 {
     return (msb << 8u) | lsb;
@@ -70,11 +73,21 @@ int LSM6DSV16X::probe()
     //根据单片机代码来 probe
 
     PX4_INFO("Using bus %d", get_device_bus());
+        /* 初始化设备上下文 */
+    lsm6dsv16x_ctx.write_reg = LSM6DSV16X::platform_write;
+    lsm6dsv16x_ctx.read_reg = LSM6DSV16X::platform_read;
+    lsm6dsv16x_ctx.mdelay = LSM6DSV16X::platform_delay;
+    lsm6dsv16x_ctx.handle =this;
+
+    lis2mdl_ctx.read_reg = LSM6DSV16X::lsm6dsv16x_read_lis2mdl_cx;
+    lis2mdl_ctx.write_reg = LSM6DSV16X::lsm6dsv16x_write_lis2mdl_cx;
+    lis2mdl_ctx.mdelay = LSM6DSV16X::platform_delay;
+    lis2mdl_ctx.handle = this;
 
     uint8_t whoami = 0;
 
     // 发送 1 字节寄存器地址，然后读 1 字节
-    lsm6dsv16x_device_id_get(&lsm6dsv16x_ctx, &whoamI);
+    lsm6dsv16x_device_id_get(&lsm6dsv16x_ctx, &whoami);
 
     PX4_INFO("WHO_AM_I = 0x%02X", whoami);
 
@@ -113,35 +126,38 @@ bool LSM6DSV16X::Configure()
 bool LSM6DSV16X::InitLIS2MDL()
 {
     //todo :
-    return true;
+    bool success = true;
+    return success;
 }
 
-int LSM6DSV16X::platform_read(uint8_t reg, uint8_t *bufp, uint16_t len)
+int LSM6DSV16X::platform_read(void *handle,uint8_t reg, uint8_t *bufp, uint16_t len)
 {
-    // 多字节读取时，设置寄存器地址自增:需测试
-    if (len > 1) {
-        reg |= 0x80;
-    }
-    uint8_t Register = reg;
+    LSM6DSV16X *dev = reinterpret_cast<LSM6DSV16X *>(handle);
 
-    int ret = transfer(&Register, sizeof(Register), bufp, len);
+    uint8_t Register = reg;
+    int ret = dev->transfer(&Register, sizeof(Register), bufp, len);
     if (ret != PX4_OK) {
-        PX4_ERR("I2C transfer failed reg=0x%02X len=%u", reg, len);
+        PX4_ERR("I2C traregnsfer failed reg=0x%02X len=%u", reg,len);
         return PX4_ERROR;
     }
     return PX4_OK;
 }
 
 /* I2C写函数 */
-int LSM6DSV16X::platform_write(uint8_t reg, const uint8_t *bufp, uint16_t len)
+int LSM6DSV16X::platform_write(void *handle,uint8_t reg, uint8_t *bufp, uint16_t len)
 {
-    uint8_t data[len + 1];
-    data[0] = reg;  // 寄存器地址
-    memcpy(&data[1], bufp, len);
+    // 把 handle 转成对象指针
+    LSM6DSV16X *dev = reinterpret_cast<LSM6DSV16X *>(handle);
 
-    int ret = transfer( data, len+1, nullptr, 0);
+    // 构造一个临时 buffer，把寄存器地址和数据拼在一起
+    uint8_t buffer[len + 1];
+    buffer[0] = reg;
+    memcpy(&buffer[1], bufp, len);
+
+    // 调用对象的 I2C 写函数
+    int ret = dev->transfer(buffer, sizeof(buffer), nullptr, 0);
     if (ret != PX4_OK) {
-        PX4_ERR("I2C traregnsfer failed reg=0x%02X len=%u", len);
+        PX4_ERR("I2C traregnsfer failed reg=0x%02X len=%u", reg,len);
         return PX4_ERROR;
     }
     return PX4_OK;
@@ -183,12 +199,12 @@ int LSM6DSV16X::lsm6dsv16x_write_target_cx(void *ctx, uint8_t i2c_add, uint8_t r
   lsm6dsv16x_acceleration_raw_get(&lsm6dsv16x_ctx, raw_xl);
 
   do {
-    nanosleep(&delay, NULL);
+    px4_usleep(1000);
     lsm6dsv16x_flag_data_ready_get(&lsm6dsv16x_ctx, &drdy);
   } while (!drdy.drdy_xl);
 
   do {
-    nanosleep(&delay, NULL);
+    px4_usleep(1000);
     lsm6dsv16x_sh_status_get(&lsm6dsv16x_ctx, &master_status);
   } while (!master_status.sens_hub_endop);
 
@@ -224,25 +240,25 @@ int LSM6DSV16X::lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t re
   sh_cfg_read.slv_subadd = reg;
   sh_cfg_read.slv_len = len;
   ret = lsm6dsv16x_sh_slv_cfg_read(&lsm6dsv16x_ctx, 0, &sh_cfg_read);
-  debug("lsm6dsv16x_sh_slv_cfg_read = %d\n", ret);
+  printf("lsm6dsv16x_sh_slv_cfg_read = %d\n", ret);
 
   ret = lsm6dsv16x_sh_slave_connected_set(&lsm6dsv16x_ctx, LSM6DSV16X_SLV_0);
-  debug("lsm6dsv16x_sh_slave_connected_set = %d\n", ret);
+  printf("lsm6dsv16x_sh_slave_connected_set = %d\n", ret);
 
   /* Enable I2C Master and I2C master. */
   ret = lsm6dsv16x_sh_master_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
-  debug("lsm6dsv16x_sh_master_set = %d\n", ret);
+  printf("lsm6dsv16x_sh_master_set = %d\n", ret);
 
   /* Enable accelerometer to trigger Sensor Hub operation. */
   ret = lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_120Hz);
-  debug("lsm6dsv16x_xl_data_rate_set = %d\n", ret);
+  printf("lsm6dsv16x_xl_data_rate_set = %d\n", ret);
 
   /* Wait Sensor Hub operation flag set. */
   ret = lsm6dsv16x_acceleration_raw_get(&lsm6dsv16x_ctx, raw_xl);
-  debug("lsm6dsv16x_acceleration_raw_get = %d\n", ret);
+  printf("lsm6dsv16x_acceleration_raw_get = %d\n", ret);
 
   do {
-    nanosleep(&delay, NULL);
+    px4_usleep(1000);
     lsm6dsv16x_flag_data_ready_get(&lsm6dsv16x_ctx, &drdy);
   } while (!drdy.drdy_xl);
 
@@ -255,8 +271,15 @@ int LSM6DSV16X::lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t re
   lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_OFF);
   /* Read SensorHub registers. */
   ret = lsm6dsv16x_sh_read_data_raw_get(&lsm6dsv16x_ctx, data, len);
-  debug("lsm6dsv16x_sh_read_data_raw_get = %d data=%d \n",ret, data[0]);
+  printf("lsm6dsv16x_sh_read_data_raw_get = %d data=%d \n",ret, data[0]);
 
   return ret;
 }
+
+/* 延迟函数 */
+void LSM6DSV16X::platform_delay(uint32_t ms)
+{
+    px4_usleep(ms);
+}
+
 

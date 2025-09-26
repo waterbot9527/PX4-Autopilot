@@ -10,6 +10,7 @@
 #include <px4_platform_common/i2c_spi_buses.h>
 #include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
+#include <time.h>
 
 
 class LSM6DSV16X : public device::I2C, public I2CSPIDriver<LSM6DSV16X>
@@ -46,17 +47,18 @@ private:
     void ConfigureSampleRate(int sample_rate);
 
     /* 设备上下文 */
-    stmdev_ctx_t lsm6dsv16x_ctx;
-    stmdev_ctx_t lis2mdl_ctx;
+    static stmdev_ctx_t lsm6dsv16x_ctx;
+    static stmdev_ctx_t lis2mdl_ctx;
     /* 函数声明 */
-    int platform_read( uint8_t reg, uint8_t *bufp, uint16_t len);
-    int platform_write( uint8_t reg, const uint8_t *bufp, uint16_t len);
-    int lsm6dsv16x_write_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
-    int lsm6dsv16x_read_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
-    int lsm6dsv16x_write_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
+    static int platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
+    static int platform_write( void *handle,uint8_t reg, uint8_t *bufp, uint16_t len);
+    static int lsm6dsv16x_write_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
+    static int lsm6dsv16x_read_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
+    static int lsm6dsv16x_write_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
                                             const uint8_t *data, uint16_t len);
-    int lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
+    static int lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
                                             uint8_t *data, uint16_t len);
+    static void platform_delay(uint32_t ms);
 
 
     PX4Accelerometer _px4_accel;
@@ -83,8 +85,8 @@ private:
     } _state{STATE::RESET};
 
     // Sensor Hub初始化函数
-    //bool InitSensorHub();
+    // bool InitSensorHub();
     // 从设备（LIS2MDL）初始化函数
-    //bool InitLIS2MDL();
+    bool InitLIS2MDL();
 
 };
