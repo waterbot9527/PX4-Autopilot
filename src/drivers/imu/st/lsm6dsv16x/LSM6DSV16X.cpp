@@ -48,7 +48,7 @@ bool LSM6DSV16X::Reset()
     _state = STATE::RESET;
     ScheduleClear();
 
-	uint32_t interva_delay_us = 2*1000;
+	uint32_t interva_delay_us = 50*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
     return true;
 }
@@ -86,28 +86,194 @@ int LSM6DSV16X::probe()
     lis2mdl_ctx.mdelay = LSM6DSV16X::platform_delay;
     lis2mdl_ctx.handle = this;
 
-    uint8_t whoami = 0;
+    lsm6dsv16x_reset_t rst;
+    lsm6dsv16x_sh_cfg_read_t sh_cfg_read;
+    uint8_t lis2mdl_rst;
+    // lsm6dsv16x_filt_settling_mask_t filt_settling_mask;
+    uint8_t whoamI = 0;
 
-    // 发送 1 字节寄存器地址，然后读 1 字节
-    lsm6dsv16x_device_id_get(&lsm6dsv16x_ctx, &whoami);
-
-    PX4_INFO("WHO_AM_I = 0x%02X", whoami);
-
-    if (whoami != 0x70) {
-        PX4_ERR("Unexpected WHO_AM_I 0x%02X", whoami);
+    lsm6dsv16x_device_id_get(&lsm6dsv16x_ctx, &whoamI);
+    if (whoamI != LSM6DSV16X_ID) {
+        DEVICE_LOG("LSM6DSV16X not found! ID: 0x%02X", whoamI);
         return PX4_ERROR;
     }
-    PX4_INFO("READ LSM6DSV16X WHO_AM_I SUCCESS");
+    PX4_INFO("LSM6DSV16X whoamI read : 0x%02X \n", whoamI);
 
+    /* 恢复默认配置 */
+    lsm6dsv16x_reset_set(&lsm6dsv16x_ctx, LSM6DSV16X_RESTORE_CTRL_REGS);
+    do {
+        lsm6dsv16x_reset_get(&lsm6dsv16x_ctx, &rst);
+    } while (rst != LSM6DSV16X_READY);
+    PX4_INFO("lsm6dsv16x reset set \n");
+
+    /* 使能块数据更新 */
+    lsm6dsv16x_block_data_update_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
+
+    /* 设置加速度计满量程 */
+    lsm6dsv16x_xl_full_scale_set(&lsm6dsv16x_ctx, LSM6DSV16X_2g);
+
+    uint8_t func_cfg_access = 0x01; // 0x01表示允许访问hub配置寄存器
+    lsm6dsv16x_write_reg(&lsm6dsv16x_ctx, LSM6DSV16X_FUNC_CFG_ACCESS, &func_cfg_access, 1);
+    platform_delay(10); // 等待配置生效
+
+    /* 配置LIS2MDL */
+    lis2mdl_device_id_get(&lis2mdl_ctx, &whoamI);
+    if (whoamI != LIS2MDL_ID) {
+        DEVICE_LOG("LIS2MDL not found! ID: 0x%02X\n", whoamI);
+        return PX4_ERROR;
+    }
+    DEVICE_LOG("LIS2MDL whoamI read : 0x%02X \n", whoamI);
+
+    /* 恢复默认配置 */
+    lis2mdl_reset_set(&lis2mdl_ctx, PROPERTY_ENABLE);
+    do {
+        lis2mdl_reset_get(&lis2mdl_ctx, &lis2mdl_rst);
+    } while (lis2mdl_rst);
+
+    lis2mdl_block_data_update_set(&lis2mdl_ctx, PROPERTY_ENABLE);
+    lis2mdl_offset_temp_comp_set(&lis2mdl_ctx, PROPERTY_ENABLE);
+    lis2mdl_operating_mode_set(&lis2mdl_ctx, LIS2MDL_CONTINUOUS_MODE);
+    lis2mdl_data_rate_set(&lis2mdl_ctx, LIS2MDL_ODR_100Hz);
+
+    /*
+    * Set FIFO watermark (number of unread sensor data TAG + 6 bytes
+    * stored in FIFO) to FIFO_WATERMARK samples
+    */
+    const uint8_t FIFO_WATERMARK = 255;
+    lsm6dsv16x_fifo_watermark_set(&lsm6dsv16x_ctx, FIFO_WATERMARK);
+
+    /* Set FIFO batch XL/Gyro ODR to 60Hz */
+    lsm6dsv16x_fifo_xl_batch_set(&lsm6dsv16x_ctx, (lsm6dsv16x_fifo_xl_batch_t)LSM6DSV16X_XL_BATCHED_AT_1920Hz);
+    lsm6dsv16x_fifo_gy_batch_set(&lsm6dsv16x_ctx, (lsm6dsv16x_fifo_gy_batch_t)LSM6DSV16X_XL_BATCHED_AT_1920Hz);
+
+
+    /* Set FIFO mode to Stream mode (aka Continuous Mode) */
+    lsm6dsv16x_fifo_mode_set(&lsm6dsv16x_ctx, LSM6DSV16X_STREAM_MODE);
+
+    // pin_int.fifo_th = PROPERTY_ENABLE;
+    // lsm6dsv16x_pin_int1_route_set(&lsm6dsv16x_ctx, &pin_int);
+    //lsm6dsv16x_pin_int2_route_set(&lsm6dsv16x_ctx, &pin_int);
+
+
+    /* Set Output Data Rate */
+    lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
+    lsm6dsv16x_gy_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
+    lsm6dsv16x_fifo_timestamp_batch_set(&lsm6dsv16x_ctx, LSM6DSV16X_TMSTMP_DEC_32);
+    lsm6dsv16x_timestamp_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
+
+    /* Set full scale */
+    lsm6dsv16x_xl_full_scale_set(&lsm6dsv16x_ctx, LSM6DSV16X_2g);
+    lsm6dsv16x_gy_full_scale_set(&lsm6dsv16x_ctx, LSM6DSV16X_1000dps);
+
+    /* Configure filtering chain */
+    // filt_settling_mask.drdy = PROPERTY_ENABLE;
+    // filt_settling_mask.irq_xl = PROPERTY_ENABLE;
+    // filt_settling_mask.irq_g = PROPERTY_ENABLE;
+    // lsm6dsv16x_filt_settling_mask_set(&lsm6dsv16x_ctx, filt_settling_mask);
+    // lsm6dsv16x_filt_xl_lp2_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
+    // lsm6dsv16x_filt_xl_lp2_bandwidth_set(&lsm6dsv16x_ctx, LSM6DSV16X_XL_STRONG);
+
+    lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_OFF);
+    lsm6dsv16x_gy_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_OFF);
+
+    /*
+    * Prepare sensor hub to read data from external slave0 (lis2mdl) and
+    * slave1 (lps22df) continuously in order to store data in FIFO.
+    */
+    sh_cfg_read.slv_add = (LIS2MDL_I2C_ADD & 0xFEU) >> 1; /* 7bit I2C address */
+    sh_cfg_read.slv_subadd = LIS2MDL_OUTX_L_REG;
+    sh_cfg_read.slv_len = 6;
+    lsm6dsv16x_sh_slv_cfg_read(&lsm6dsv16x_ctx, 0, &sh_cfg_read);
+    lsm6dsv16x_fifo_sh_batch_slave_set(&lsm6dsv16x_ctx, 0, PROPERTY_ENABLE);
+
+
+    /* Configure Sensor Hub data rate */
+    lsm6dsv16x_sh_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_SH_120Hz);
+
+    /* Configure Sensor Hub to read one slave. */
+    lsm6dsv16x_sh_slave_connected_set(&lsm6dsv16x_ctx, LSM6DSV16X_SLV_0);
+
+    /* set SHUB write_once bit */
+    lsm6dsv16x_sh_write_mode_set(&lsm6dsv16x_ctx, LSM6DSV16X_ONLY_FIRST_CYCLE);
+
+    /* Enable I2C Master. */
+    lsm6dsv16x_sh_master_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
+
+    /* Set Output Data Rate.
+    * Selected data rate have to be equal or greater with respect
+    * with MLC data rate.
+    */
+    lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
+    lsm6dsv16x_gy_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
+    PX4_INFO("IMU CONFIG SUCCESS \n");
     return PX4_OK;
 }
 
 void LSM6DSV16X::RunImpl()
 {
-    //const hrt_abstime now = hrt_absolute_time();
+    lsm6dsv16x_fifo_status_t fifo_status;
+    lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
+    // DEVICE_LOG("fifo_status.fifo_bdr = %d \nfifo_status.fifo_full = %d \nfifo_status.fifo_level = %d \nfifo_status.fifo_ovr = %d \nfifo_status.fifo_th = %d \n",fifo_status.fifo_bdr,fifo_status.fifo_full,fifo_status.fifo_level,fifo_status.fifo_ovr,fifo_status.fifo_th);
+    if (fifo_status.fifo_th) {
+        uint16_t num = 0;
+        int16_t *datax;
+        int16_t *datay;
+        int16_t *dataz;
+        int32_t *ts;
+        /* 读取FIFO状态 */
+        lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
+        num = fifo_status.fifo_level;
 
-    PX4_INFO("running");
+        DEVICE_LOG("-- FIFO num %d \r\n", num);
 
+        while (num--) {
+            lsm6dsv16x_fifo_out_raw_t f_data;
+            float_t ts_usec;
+
+            /* 读取FIFO数据 */
+            lsm6dsv16x_fifo_out_raw_get(&lsm6dsv16x_ctx, &f_data);
+            datax = (int16_t *)&f_data.data[0];
+            datay = (int16_t *)&f_data.data[2];
+            dataz = (int16_t *)&f_data.data[4];
+            ts = (int32_t *)&f_data.data[0];
+
+            switch (f_data.tag) {
+            case 1: //LSM6DSV16X_GY_NC_TAG:
+                    {
+                        // datasheet : Table 3. Mechanical characteristics
+                        lsm6dsv16x_from_fs1000_to_mdps(*datax);
+                        lsm6dsv16x_from_fs1000_to_mdps(*datay);
+                        lsm6dsv16x_from_fs1000_to_mdps(*dataz);
+                        DEVICE_LOG("gray:\t%4.2f\t%4.2f\t%4.2f\r\n",
+                            (double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
+                            (double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
+                            (double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
+                        );
+                        break;
+                    }
+            case 0x2:
+                DEVICE_LOG("ACC:\t%4.2f\t%4.2f\t%4.2f[mg]\r\n",
+                        (double)lsm6dsv16x_from_fs2_to_mg(*datax),
+                        (double)lsm6dsv16x_from_fs2_to_mg(*datay),
+                        (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+                break;
+            case 0x4:
+                ts_usec = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
+                DEVICE_LOG("TIMESTAMP %6.1f [us] (lsb: %d)\r\n", (double)ts_usec, *ts);
+                break;
+            case 0xE:
+                DEVICE_LOG("LIS2MDL:\t%4.2f\t%4.2f\t%4.2f[mGa]\r\n",
+                        (double)lis2mdl_from_lsb_to_mgauss(*datax),
+                        (double)lis2mdl_from_lsb_to_mgauss(*datay),
+                        (double)lis2mdl_from_lsb_to_mgauss(*dataz));
+                break;
+            default:
+                DEVICE_LOG("Invalid TAG %02x\r\n", f_data.tag);
+                break;
+            }
+        }
+        DEVICE_LOG("------ \r\n\r\n");
+    }
 }
 
 void LSM6DSV16X::ConfigureSampleRate(int sample_rate)
@@ -240,26 +406,26 @@ int LSM6DSV16X::lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t re
 
   /* Configure Sensor Hub to read LIS2MDL. */
   sh_cfg_read.slv_add = (i2c_add & 0xFEU) >> 1; /* 7bit I2C address */
-  printf("slv_add: 0x%02X",sh_cfg_read.slv_add);
+//   PX4_INFO("slv_add: 0x%02X",sh_cfg_read.slv_add);
   sh_cfg_read.slv_subadd = reg;
   sh_cfg_read.slv_len = len;
   ret = lsm6dsv16x_sh_slv_cfg_read(&lsm6dsv16x_ctx, 0, &sh_cfg_read);
-  printf("lsm6dsv16x_sh_slv_cfg_read = %d\n", ret);
+//   PX4_INFO("lsm6dsv16x_sh_slv_cfg_read = %d\n", ret);
 
   ret = lsm6dsv16x_sh_slave_connected_set(&lsm6dsv16x_ctx, LSM6DSV16X_SLV_0);
-  printf("lsm6dsv16x_sh_slave_connected_set = %d\n", ret);
+//   PX4_INFO("lsm6dsv16x_sh_slave_connected_set = %d\n", ret);
 
   /* Enable I2C Master and I2C master. */
   ret = lsm6dsv16x_sh_master_set(&lsm6dsv16x_ctx, PROPERTY_ENABLE);
-  printf("lsm6dsv16x_sh_master_set = %d\n", ret);
+//   PX4_INFO("lsm6dsv16x_sh_master_set = %d\n", ret);
 
   /* Enable accelerometer to trigger Sensor Hub operation. */
   ret = lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_120Hz);
-  printf("lsm6dsv16x_xl_data_rate_set = %d\n", ret);
+//   PX4_INFO("lsm6dsv16x_xl_data_rate_set = %d\n", ret);
 
   /* Wait Sensor Hub operation flag set. */
   ret = lsm6dsv16x_acceleration_raw_get(&lsm6dsv16x_ctx, raw_xl);
-  printf("lsm6dsv16x_acceleration_raw_get = %d\n", ret);
+//   PX4_INFO("lsm6dsv16x_acceleration_raw_get = %d\n", ret);
 
   do {
     px4_usleep(1000);
@@ -275,7 +441,7 @@ int LSM6DSV16X::lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t re
   lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_OFF);
   /* Read SensorHub registers. */
   ret = lsm6dsv16x_sh_read_data_raw_get(&lsm6dsv16x_ctx, data, len);
-  printf("lsm6dsv16x_sh_read_data_raw_get = %d data=%d \n",ret, data[0]);
+//   PX4_INFO("lsm6dsv16x_sh_read_data_raw_get = %d data=%d \n",ret, data[0]);
 
   return ret;
 }
