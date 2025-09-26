@@ -45,6 +45,19 @@ private:
     bool Configure();
     void ConfigureSampleRate(int sample_rate);
 
+    /* 设备上下文 */
+    stmdev_ctx_t lsm6dsv16x_ctx;
+    stmdev_ctx_t lis2mdl_ctx;
+    /* 函数声明 */
+    int platform_read( uint8_t reg, uint8_t *bufp, uint16_t len);
+    int platform_write( uint8_t reg, const uint8_t *bufp, uint16_t len);
+    int lsm6dsv16x_write_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
+    int lsm6dsv16x_read_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
+    int lsm6dsv16x_write_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
+                                            const uint8_t *data, uint16_t len);
+    int lsm6dsv16x_read_target_cx(void *ctx, uint8_t i2c_add, uint8_t reg,
+                                            uint8_t *data, uint16_t len);
+
 
     PX4Accelerometer _px4_accel;
     PX4Gyroscope _px4_gyro;
