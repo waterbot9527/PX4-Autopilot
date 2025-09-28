@@ -2142,6 +2142,7 @@ MavlinkReceiver::handle_message_manual_control(mavlink_message_t *msg)
 	manual_control_setpoint.timestamp = manual_control_setpoint.timestamp_sample = hrt_absolute_time();
 	manual_control_setpoint.valid = true;
 	_manual_control_input_pub.publish(manual_control_setpoint);
+
 }
 
 void
@@ -3565,8 +3566,10 @@ void MavlinkReceiver::handle_message_waterbot_ctl_motor(mavlink_message_t *msg)
 			motor_topic.direction[n] = motor_msg.direction[4*b + n % 4];
 			motor_topic.timestamp = now;
 		}
+		motor_topic = motor_topic;
 		// 发布 topic
-		orb_advert_t pub = orb_advertise_multi(ORB_ID(wbot_ctrl_moto), &motor_topic, &b);
+		// orb_advert_t pub = orb_advertise_multi(ORB_ID(wbot_ctrl_moto), &motor_topic, &b);
+		orb_advert_t pub = orb_advertise(ORB_ID(wbot_ctrl_moto), nullptr);
 
 		if (pub != nullptr) {
 			PX4_INFO("Published wbot_moto message to instance %d", b);

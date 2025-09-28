@@ -114,8 +114,10 @@ void MixingOutput::initParamHandles(const uint8_t instance_start)
 	char param_name[17];
 
 	for (unsigned i = 0; i < _max_num_outputs; ++i) {
+
 		snprintf(param_name, sizeof(param_name), "%s_%s%d", _param_prefix, "FUNC", i + instance_start);
 		_param_handles[i].function = param_find(param_name);
+		PX4_INFO("find param ( %s ) = %i", param_name , _param_handles[i].function);
 		snprintf(param_name, sizeof(param_name), "%s_%s%d", _param_prefix, "DIS", i + instance_start);
 		_param_handles[i].disarmed = param_find(param_name);
 		snprintf(param_name, sizeof(param_name), "%s_%s%d", _param_prefix, "MIN", i + instance_start);
@@ -159,7 +161,10 @@ void MixingOutput::updateParams()
 
 		if (_param_handles[i].function != PARAM_INVALID && param_get(_param_handles[i].function, &val) == 0) {
 			if (val != (int32_t)_function_assignment[i]) {
+				//PX4_INFO("changed");
 				function_changed = true;
+			}  else {
+				//PX4_INFO("updateParams, i=%i val=%i  fc=%i", i, val, (int32_t)_function_assignment[i]);
 			}
 
 			// we set _function_assignment[i] later to ensure _functions[i] is updated at the same time
@@ -217,6 +222,7 @@ void MixingOutput::cleanupFunctions()
 bool MixingOutput::updateSubscriptions(bool allow_wq_switch)
 {
 	if (!_need_function_update || _armed.armed) {
+		//PX4_INFO("updateSubscriptions 0");
 		return false;
 	}
 
@@ -256,7 +262,7 @@ bool MixingOutput::updateSubscriptions(bool allow_wq_switch)
 	}
 
 	// Now update the functions
-	PX4_DEBUG("updating functions");
+	PX4_INFO("updating functions");
 
 	cleanupFunctions();
 
@@ -266,17 +272,25 @@ bool MixingOutput::updateSubscriptions(bool allow_wq_switch)
 	int subscription_callback_provider_index = INT_MAX;
 	bool all_disabled = true;
 
+
 	for (int i = 0; i < _max_num_outputs; ++i) {
 		int32_t val;
 
 		if (_param_handles[i].function != PARAM_INVALID && param_get(_param_handles[i].function, &val) == 0) {
+			PX4_INFO("_function_assignment  1 = %i", (uint32_t)val);
 			_function_assignment[i] = (OutputFunction)val;
 
 		} else {
+			PX4_INFO("_function_assignment  2 ");
 			_function_assignment[i] = OutputFunction::Disabled;
 		}
 
 		for (int p = 0; p < (int)(sizeof(all_function_providers) / sizeof(all_function_providers[0])); ++p) {
+			// PX4_INFO("mixer allocate step0=%i %i %i ",
+			// 	(int32_t)_function_assignment[i],
+			// 	(int32_t)all_function_providers[p].min_func,
+			// 	(int32_t)all_function_providers[p].max_func
+			// );
 			if (_function_assignment[i] >= all_function_providers[p].min_func &&
 			    _function_assignment[i] <= all_function_providers[p].max_func) {
 				all_disabled = false;
@@ -290,9 +304,11 @@ bool MixingOutput::updateSubscriptions(bool allow_wq_switch)
 				}
 
 				if (found_index >= 0) {
+					PX4_INFO("mixer allocate step1");
 					_functions[i] = _function_allocated[found_index];
 
 				} else {
+					PX4_INFO("mixer allocate func=%i", p);
 					_function_allocated[next_provider] = all_function_providers[p].constructor(context);
 
 					if (_function_allocated[next_provider]) {
@@ -449,12 +465,19 @@ bool MixingOutput::update()
 				outputs[i] = NAN;
 			}
 
+			outputs[i] = _functions[i]->value(_function_assignment[i]);
+
 			_reversible_mask |= (uint32_t)_functions[i]->reversible(_function_assignment[i]) << i;
 
 		} else {
+
 			outputs[i] = NAN;
 		}
 	}
+
+	// for (int i = 0; i < _max_num_outputs; ++i) {
+	// 	PX4_INFO("output[%i]= %f", i , (double)outputs[i]);
+	// }
 
 	// Send output if any function mapped or one last disabling sample
 	if (!all_disabled || !_was_all_disabled) {
@@ -467,28 +490,43 @@ bool MixingOutput::update()
 
 	_was_all_disabled = all_disabled;
 
+
+
+
 	return true;
 }
 
 void
 MixingOutput::limitAndUpdateOutputs(float outputs[MAX_ACTUATORS], bool has_updates)
 {
+	// for(int n = 0; n < 16; n++)
+	// {
+	// 	printf("%.4f," , (double)outputs[n]);
+	// }
+	// printf("\n");
+	#if  0
 	if (_armed.lockdown || _armed.kill) {
+		printf("test limitAndUpdateOutputs 1\n");
 		// overwrite outputs in case of lockdown with disarmed values
 		for (size_t i = 0; i < _max_num_outputs; i++) {
 			_current_output_value[i] = _disarmed_value[i];
 		}
 
 	} else if (_armed.termination) {
+		printf("test limitAndUpdateOutputs 2\n");
 		// Overwrite outputs with _failsafe_value when terminated
 		for (size_t i = 0; i < _max_num_outputs; i++) {
 			_current_output_value[i] = actualFailsafeValue(i);
 		}
 
 	} else {
+		printf("test limitAndUpdateOutputs 3\n");
 		// the output limit call takes care of out of band errors, NaN and constrains
 		output_limit_calc(_throttle_armed || _actuator_test.inTestMode(), _max_num_outputs, outputs);
 	}
+	#endif
+
+	output_limit_calc(_throttle_armed || _actuator_test.inTestMode(), _max_num_outputs, outputs);
 
 	// We must calibrate the PWM and Oneshot ESCs to a consistent range of 1000-2000us (gets mapped to 125-250us for Oneshot)
 	// Doing so makes calibrations consistent among different configurations and hence PWM minimum and maximum have a consistent effect
@@ -537,6 +575,12 @@ uint16_t MixingOutput::output_limit_calc_single(int i, float value) const
 void
 MixingOutput::output_limit_calc(const bool armed, const int num_channels, const float output[MAX_ACTUATORS])
 {
+	for (int i = 0; i < num_channels; i++) {
+		_current_output_value[i] = output_limit_calc_single(i, output[i]);
+	}
+
+	return ;
+
 	// time to slowly ramp up the ESCs
 	static constexpr hrt_abstime RAMP_TIME_US = 500_ms;
 

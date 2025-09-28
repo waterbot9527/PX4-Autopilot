@@ -35,12 +35,15 @@ px4_add_module(
 	MODULE drivers__wbot_main_driver
 	MAIN wbot_main_driver
 	COMPILE_FLAGS
+		-DPARAM_PREFIX="WOUT"
 		#-DDEBUG_BUILD
 	SRCS
 		lsm6dsv16_utils.c
 		wbot_main_driver_main.cpp
 		WBotMainDriver.cpp
 		WBotMainDriver.h
+	MODULE_CONFIG
+		module.yaml
 	DEPENDS
 		st_lsm6dsv16x_common
 		st_lis2mdl_common
@@ -48,4 +51,5 @@ px4_add_module(
 		drivers_gyroscope
 		drivers_magnetometer
 		px4_work_queue
+		mixer_module
 	)

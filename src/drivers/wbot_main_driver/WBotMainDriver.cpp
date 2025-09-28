@@ -76,6 +76,7 @@ WBotMainDriver::~WBotMainDriver()
 {
 }
 
+
 int WBotMainDriver::init()
 {
 	PX4_INFO("Water Robot Main Driver Initialized!");
@@ -108,7 +109,7 @@ bool WBotMainDriver::Reset()
 
 void WBotMainDriver::RunImpl()
 {
-	// PX4_INFO("Water Robot Main Driver running!");
+	//PX4_INFO("Water Robot Main Driver running!");
 	if (should_exit()) {
 		PX4_INFO("Water Robot Main Driver quit!");
 		exit_and_cleanup();
@@ -134,6 +135,13 @@ void WBotMainDriver::RunImpl()
 			McuCmdHelper::set_motor_cmd( &send_recv_cache[cmd_size] , speed, direction, i2c_index );
 			cmd_size += 2;
 		}
+		// // 发布 topic
+		// orb_advert_t pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &data);
+		// if (pub != nullptr) {
+		// PX4_INFO("Published wbot_moto message");
+		// } else {
+		// PX4_ERR("Failed to publish wbot_moto message");
+		// }
 	}
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
@@ -159,10 +167,6 @@ void WBotMainDriver::RunImpl()
 	} else {
 		send_recv_cache[0] = 0;
 	}
-
-	if ( send_recv_cache[0] == 0)
-		return;
-
 
 	// TODO: add cmd
 	if (PX4_OK != transfer(send_recv_cache, send_recv_cache, sizeof(send_recv_cache)) )
@@ -206,8 +210,7 @@ void WBotMainDriver::RunImpl()
 
 	// get data ok
 
-
-
+	wbot_output.wbot_run_once();
 
 }
 

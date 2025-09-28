@@ -48,11 +48,108 @@
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+#include <lib/mixer_module/mixer_module.hpp>
 
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
 
+
+#include <lib/parameters/param.h>
+#include <lib/perf/perf_counter.h>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/log.h>
+#include <px4_platform_common/module.h>
+
+#define MAX_WBOT_ACTUATORS (8)
+
+
+class WBotMainOutput : public ModuleBase<WBotMainOutput>, public OutputModuleInterface
+{
+public:
+	WBotMainOutput():
+		OutputModuleInterface(MODULE_NAME, px4::wq_configurations::hp_default)
+	{
+
+	}
+	virtual ~WBotMainOutput()
+	{
+
+	}
+
+	int init()
+	{
+		return 0;
+	}
+
+	void Run() {}
+
+	/** @see ModuleBase::print_status() */
+	int print_status()
+	{
+		return 0;
+	}
+
+	void update_params()
+	{
+
+	}
+
+	void wbot_run_once()
+	{
+		_mixing_output.update();
+
+		#if 0
+		// check for parameter updates
+		if (_parameter_update_sub.updated()) {
+			// clear update
+			parameter_update_s pupdate;
+			_parameter_update_sub.copy(&pupdate);
+
+			// update parameters from storage
+			updateParams();
+		}
+		#else
+
+			if ( mycnt == 1000)
+			{
+				PX4_INFO("fuck0");
+				updateParams();
+
+				mycnt = 0xffffffff;
+			} else if ( mycnt < 1000 ) {
+				mycnt++;
+			}
+
+		#endif
+
+		_mixing_output.updateSubscriptions(false);
+	}
+
+	bool updateOutputs(uint16_t outputs[MAX_ACTUATORS],
+			   unsigned num_outputs, unsigned num_control_groups_updated)
+	{
+		// printf("wbot output, num_output=%d\n", num_outputs);
+
+		// printf("wbot output data=");
+		// for (int n =0; n < MAX_ACTUATORS; n++)
+		// {
+		// 	printf("0x%04x,", outputs[n]);
+		// }
+		// printf("\n");
+
+		return true;
+	}
+
+private:
+	uint32_t mycnt = 0;
+	static constexpr int MAX_ACTUATORS = 8;
+
+	MixingOutput _mixing_output{PARAM_PREFIX, MAX_ACTUATORS, *this, MixingOutput::SchedulingPolicy::Auto, false};
+
+	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
+
+};
 
 class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
 {
@@ -70,11 +167,12 @@ public:
 	void RunImpl() ;
 
 
-
 private:
 	PX4Accelerometer _px4_accel;
 	PX4Gyroscope _px4_gyro;
 	PX4Magnetometer _px4_mag;
+
+	WBotMainOutput wbot_output{};
 
 	orb_advert_t _water_press_pub = nullptr;
 

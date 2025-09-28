@@ -48,7 +48,10 @@ public:
 		resetAllToDisarmedValue();
 	}
 
-	static FunctionProviderBase *allocate(const Context &context) { return new FunctionManualRC(); }
+	static FunctionProviderBase *allocate(const Context &context) {
+		PX4_INFO("FunctionManualRC alloc");
+		return new FunctionManualRC();
+	}
 
 	void update() override
 	{
