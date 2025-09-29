@@ -7,6 +7,7 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/mixer_module/mixer_module.hpp>
 
+#include <uORB/uORB.h>
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/wbot_ctrl_led.h>
 

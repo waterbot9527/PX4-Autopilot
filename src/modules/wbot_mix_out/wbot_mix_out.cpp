@@ -1,5 +1,6 @@
 
 #include "wbot_mix_out.hpp"
+#include <cstdlib>
 
 using namespace time_literals;
 
@@ -53,7 +54,7 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 			unsigned num_outputs, unsigned num_control_groups_updated)
 {
 
-#if 1
+#if 0
 	printf("wbot output, num_output=%d\n", num_outputs);
 	printf("wbot output data=\n");
 	// [ 0,1,2,3,4,5 ]
@@ -63,6 +64,91 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		if ( n == 7 ) printf("\n");
 	}
 	printf("\n");
+#else
+	struct wbot_ctrl_moto_s msg{};
+
+	#define WBOT_MAX_CONTROL_MODE_CNT (8)
+	#define WBOT_MAX_MOTO_CNT (8)
+	/*
+
+	数组的 值是比例系数
+	"摇杆1-X-L" 意思是： 摇杆1 在X 轴上 从中心往左移动，程序采样的值从[0 到 1.0]
+	"摇杆1-X-R" 意思是： 摇杆1 在X 轴上 从中心往右移动，程序采样的值从[0 到 1.0]
+	其值是个 数组，长度必须为 8 。 数组里的每个值是比例系数
+	譬如 ： "摇杆1-X-L" = [ 0, 0.2, 0.5, 0, 0, 0, 0, 0]
+	意思是 摇杆1 在X轴上 左移动读出来的数据 是  0.56 时， 转换成电机的数据是
+	[ 0*255*0.56, 0.2*255*0.56 .... ]
+	*/
+	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
+		{ +1.0, +1.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
+		{ -1.0, -1.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+		{ +0.0, +0.0, +1.0, +1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-Y-U */
+		{ +0.0, +0.0, -1.0, -1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-Y-D */
+		{ +0.0, +0.0, +0.0, +0.0, +1.0, +1.0, +0.0, +0.0 }, /* 摇杆2-X-L */
+		{ +0.0, +0.0, +0.0, +0.0, -1.0, -1.0, +0.0, +0.0 }, /* 摇杆2-X-R */
+		{ +0.0, +0.0, +0.0, +0.0, +0.0, +0.0, +1.0, +1.0 }, /* 摇杆2-Y-U */
+		{ +0.0, +0.0, +0.0, +0.0, +0.0, +0.0, -1.0, -1.0 }  /* 摇杆2-Y-D */
+	};
+
+	//only for debug
+	// for ( int n = 0; n < MAX_ACTUATORS; n++)
+	// {
+	// 	outputs[n] = 0;
+	// }
+	// outputs[0] = 256 + 128;
+
+	float f_speed[WBOT_MAX_MOTO_CNT] = { 0 };
+	for ( int n = 0; n < 4 ; n++)
+	{
+		int32_t control_mode_value = outputs[n];
+		int32_t control_mode_abs_value = control_mode_value;
+		control_mode_value -= 256;
+
+		if (control_mode_value > 255)
+			control_mode_value = 255;
+		else if ( control_mode_value < -255 )
+			control_mode_value = -255;
+
+
+		control_mode_abs_value = std::abs(control_mode_value);
+
+
+		int ctrl_mode ;
+		if ( control_mode_value > 0 ) {
+			//处理
+			ctrl_mode = 0 + n*2;
+		} else {
+			ctrl_mode = 1 + n*2;
+		}
+		for ( int k = 0; k < WBOT_MAX_MOTO_CNT; k++ )
+		{
+			f_speed[k] += (control_mode_config[ctrl_mode][k] * ((float)control_mode_abs_value));
+		}
+	}
+	for ( int n = 0; n < WBOT_MAX_MOTO_CNT; n++)
+	{
+		if ( f_speed[n] >= 0 ) {
+
+			msg.direction[n] = 1;
+		} else {
+			msg.direction[n] = 0;
+		}
+
+		int32_t abs_speed = (int32_t)(std::abs(f_speed[n]));
+		if ( abs_speed > 255 )
+			abs_speed = 255;
+		if ( abs_speed < 3 )
+			abs_speed = 0;
+
+		msg.speed[n] = abs_speed;
+
+	}
+
+        msg.timestamp = hrt_absolute_time();
+
+        // 发布 topic
+        //orb_advert_t pub = ;
+	orb_advertise(ORB_ID(wbot_ctrl_moto), &msg);
 #endif
 
 	return true;
