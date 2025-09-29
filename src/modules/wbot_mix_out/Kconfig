@@ -1,0 +1,5 @@
+menuconfig MODULES_WBOT_MIX_OUT
+	bool "wbot_mix_out"
+	default n
+	---help---
+		Enable support for Water Robot Main Driver
