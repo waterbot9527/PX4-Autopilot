@@ -1,0 +1,13 @@
+module_name: 'WOUT'
+actuator_output:
+  output_groups:
+    - param_prefix: 'WOUT'
+      channel_label: 'WOUT'
+      group_label : "WOUT"
+      standard_params:
+        disarmed: { min: 0, max: 0, default: 0 }
+        min: { min: 0, max: 512, default: 256 }
+        max: { min: 0, max: 512, default: 256 }
+        failsafe: { min: 0, max: 0 }
+      num_channels: 8
+

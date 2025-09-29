@@ -61,7 +61,11 @@ public:
 				_data[2] = manual_control_setpoint.throttle;
 				_data[3] = manual_control_setpoint.yaw;
 				_data[4] = manual_control_setpoint.flaps;
+				#ifdef WBOT_HACK_INPUT
+				_data[5] = (float)manual_control_setpoint.buttons;
+				#else
 				_data[5] = manual_control_setpoint.aux1;
+				#endif
 				_data[6] = manual_control_setpoint.aux2;
 				_data[7] = manual_control_setpoint.aux3;
 				_data[8] = manual_control_setpoint.aux4;

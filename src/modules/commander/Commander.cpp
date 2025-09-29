@@ -595,7 +595,9 @@ transition_result_t Commander::arm(arm_disarm_reason_t calling_reason, bool run_
 			mavlink_log_critical(&_mavlink_log_pub, "Arming denied: Resolve system health failures first\t");
 			events::send(events::ID("commander_arm_denied_resolve_failures"), {events::Log::Critical, events::LogInternal::Info},
 				     "Arming denied: Resolve system health failures first");
-			return TRANSITION_DENIED;
+			#ifndef WBOT_IGNORE_SAFE
+				return TRANSITION_DENIED;
+			#endif
 		}
 	}
 

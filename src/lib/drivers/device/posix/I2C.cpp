@@ -134,7 +134,7 @@ I2C::transfer(const uint8_t *send, const unsigned send_len, uint8_t *recv, const
 	}
 
 	do {
-		DEVICE_DEBUG("transfer out %p/%u  in %p/%u", send, send_len, recv, recv_len);
+		// DEVICE_DEBUG("transfer out %p/%u  in %p/%u", send, send_len, recv, recv_len);
 
 		unsigned msgs = 0;
 		struct i2c_msg msgv[2] {};

@@ -224,7 +224,7 @@ void LSM6DSV16X::RunImpl()
         lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
         num = fifo_status.fifo_level;
 
-        DEVICE_LOG("-- FIFO num %d \r\n", num);
+        // DEVICE_LOG("-- FIFO num %d \r\n", num);
 
         while (num--) {
             lsm6dsv16x_fifo_out_raw_t f_data;
@@ -244,35 +244,42 @@ void LSM6DSV16X::RunImpl()
                         lsm6dsv16x_from_fs1000_to_mdps(*datax);
                         lsm6dsv16x_from_fs1000_to_mdps(*datay);
                         lsm6dsv16x_from_fs1000_to_mdps(*dataz);
-                        DEVICE_LOG("gray:\t%4.2f\t%4.2f\t%4.2f\r\n",
-                            (double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
-                            (double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
-                            (double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
-                        );
+                        // DEVICE_LOG("gray:\t%4.2f\t%4.2f\t%4.2f\r\n",
+                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
+                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
+                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
+                        // );
                         break;
                     }
             case 0x2:
-                DEVICE_LOG("ACC:\t%4.2f\t%4.2f\t%4.2f[mg]\r\n",
-                        (double)lsm6dsv16x_from_fs2_to_mg(*datax),
-                        (double)lsm6dsv16x_from_fs2_to_mg(*datay),
-                        (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+                lsm6dsv16x_from_fs2_to_mg(*datax);
+                lsm6dsv16x_from_fs2_to_mg(*datay);
+                lsm6dsv16x_from_fs2_to_mg(*dataz);
+                // DEVICE_LOG("ACC:\t%4.2f\t%4.2f\t%4.2f[mg]\r\n",
+                //         (double)lsm6dsv16x_from_fs2_to_mg(*datax),
+                //         (double)lsm6dsv16x_from_fs2_to_mg(*datay),
+                //         (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
                 break;
             case 0x4:
                 ts_usec = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
-                DEVICE_LOG("TIMESTAMP %6.1f [us] (lsb: %d)\r\n", (double)ts_usec, *ts);
+                ts_usec = ts_usec;
+                // DEVICE_LOG("TIMESTAMP %6.1f [us] (lsb: %d)\r\n", (double)ts_usec, *ts);
                 break;
             case 0xE:
-                DEVICE_LOG("LIS2MDL:\t%4.2f\t%4.2f\t%4.2f[mGa]\r\n",
-                        (double)lis2mdl_from_lsb_to_mgauss(*datax),
-                        (double)lis2mdl_from_lsb_to_mgauss(*datay),
-                        (double)lis2mdl_from_lsb_to_mgauss(*dataz));
+                (double)lis2mdl_from_lsb_to_mgauss(*datax);
+                (double)lis2mdl_from_lsb_to_mgauss(*datay);
+                (double)lis2mdl_from_lsb_to_mgauss(*dataz);
+                // DEVICE_LOG("LIS2MDL:\t%4.2f\t%4.2f\t%4.2f[mGa]\r\n",
+                //         (double)lis2mdl_from_lsb_to_mgauss(*datax),
+                //         (double)lis2mdl_from_lsb_to_mgauss(*datay),
+                //         (double)lis2mdl_from_lsb_to_mgauss(*dataz));
                 break;
             default:
                 DEVICE_LOG("Invalid TAG %02x\r\n", f_data.tag);
                 break;
             }
         }
-        DEVICE_LOG("------ \r\n\r\n");
+        // DEVICE_LOG("------ \r\n\r\n");
     }
 }
 

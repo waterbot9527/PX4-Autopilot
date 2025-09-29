@@ -448,6 +448,9 @@ bool MixingOutput::update()
 			} else {
 				outputs[i] = NAN;
 			}
+#ifdef WBOT_HACK_INPUT
+			outputs[i] = _functions[i]->value(_function_assignment[i]);
+#endif
 
 			_reversible_mask |= (uint32_t)_functions[i]->reversible(_function_assignment[i]) << i;
 
@@ -473,6 +476,7 @@ bool MixingOutput::update()
 void
 MixingOutput::limitAndUpdateOutputs(float outputs[MAX_ACTUATORS], bool has_updates)
 {
+	#ifndef WBOT_HACK_INPUT
 	if (_armed.lockdown || _armed.kill) {
 		// overwrite outputs in case of lockdown with disarmed values
 		for (size_t i = 0; i < _max_num_outputs; i++) {
@@ -489,6 +493,11 @@ MixingOutput::limitAndUpdateOutputs(float outputs[MAX_ACTUATORS], bool has_updat
 		// the output limit call takes care of out of band errors, NaN and constrains
 		output_limit_calc(_throttle_armed || _actuator_test.inTestMode(), _max_num_outputs, outputs);
 	}
+	#else
+		output_limit_calc(_throttle_armed || _actuator_test.inTestMode(), _max_num_outputs, outputs);
+	#endif
+
+
 
 	// We must calibrate the PWM and Oneshot ESCs to a consistent range of 1000-2000us (gets mapped to 125-250us for Oneshot)
 	// Doing so makes calibrations consistent among different configurations and hence PWM minimum and maximum have a consistent effect
@@ -537,6 +546,18 @@ uint16_t MixingOutput::output_limit_calc_single(int i, float value) const
 void
 MixingOutput::output_limit_calc(const bool armed, const int num_channels, const float output[MAX_ACTUATORS])
 {
+#ifdef WBOT_HACK_INPUT
+	for (int i = 0; i < num_channels; i++) {
+		if ( i < 4 ) {
+			_current_output_value[i] = output_limit_calc_single(i, output[i]);
+		} else {
+			_current_output_value[i] = output[i];
+		}
+	}
+
+	return ;
+#endif
+
 	// time to slowly ramp up the ESCs
 	static constexpr hrt_abstime RAMP_TIME_US = 500_ms;
 

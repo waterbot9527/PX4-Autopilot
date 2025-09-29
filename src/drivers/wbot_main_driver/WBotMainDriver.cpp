@@ -160,10 +160,6 @@ void WBotMainDriver::RunImpl()
 		send_recv_cache[0] = 0;
 	}
 
-	if ( send_recv_cache[0] == 0)
-		return;
-
-
 	// TODO: add cmd
 	if (PX4_OK != transfer(send_recv_cache, send_recv_cache, sizeof(send_recv_cache)) )
 	{
