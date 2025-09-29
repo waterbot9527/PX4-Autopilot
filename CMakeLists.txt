@@ -102,6 +102,7 @@
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
 add_compile_definitions(WBOT_IGNORE_SAFE)
+add_compile_definitions(WBOT_HACK_INPUT)
 
 
 set(PX4_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE FILEPATH "PX4 source directory" FORCE)
