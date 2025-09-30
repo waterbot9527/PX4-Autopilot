@@ -3,70 +3,113 @@
 #include <px4_platform_common/module_params.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/wbot_ctrl_moto.h>
+#include <uORB/topics/wbot_ctrl_led.h>
+
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 //#include <px4_platform_common/px4_log.h>
-
+// #define  MOTO_TEST
+#define  LED_TEST
 extern "C" __EXPORT int wbot_moto_test_main(int argc, char *argv[]);
 
 int wbot_moto_test_main(int argc, char *argv[])
 {
-    PX4_INFO("=== wbot_moto test publisher ===");
+    PX4_INFO("=== wbot test publisher start ===");
 
-    // int instance = 0;
-    // int direction = 0;
+#ifdef MOTO_TEST
 
-    // if (argc > 2) {
-    //     instance = atoi(argv[1]);
-    //     direction = atoi(argv[2]);
-    // }
+    int cmd1 = 0;
+    int cmd2 = 0;
 
-    // if ( instance ==  1 )
-    // {
-    //     // 创建消息
-    //     struct wbot_ctrl_moto_s msg{};
-    //     msg.speed[0] = 60;
-    //     msg.speed[1] = 60;
-    //     msg.speed[2] = 60;
-    //     msg.speed[3] = 60;
-    //     msg.speed[4] = 60;
-    //     msg.speed[5] = 60;
-    //     msg.speed[6] = 60;
-    //     msg.speed[7] = 60;
+    if (argc > 2) {
+        cmd1 = atoi(argv[1]);
+        cmd2 = atoi(argv[2]);
+    }
+#endif
 
-    //     msg.direction[0] = direction;
-    //     msg.direction[1] = direction;
-    //     msg.direction[2] = direction;
-    //     msg.direction[3] = direction;
+#ifdef LED_TEST
 
-    //     msg.timestamp = hrt_absolute_time();
+    int cmd1 = 0;
+    int cmd2 = 0;
+    int value = 0;
 
-    //     // 发布 topic
-    //     orb_advert_t pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &msg);
+    if (argc > 3) {
+        cmd1 = atoi(argv[1]);
+        cmd2 = atoi(argv[2]);
+        value = atoi(argv[3]);
+    }
+#endif
 
-    //     if (pub != nullptr) {
-    //         PX4_INFO("Published wbot_moto message to instance %d", instance);
-    //     } else {
-    //         PX4_ERR("Failed to publish wbot_moto message");
-    //     }
+    if (cmd1 == 1) {
+#ifdef LED_TEST
+        // LED测试功能（仅当定义LED_TEST时编译）
+        struct wbot_ctrl_led_s led_msg{};
+        led_msg.led_id = cmd2;
+        led_msg.light_value = value;
+        led_msg.timestamp = hrt_absolute_time();
 
-    // } else {
-    //     struct wbot_ctrl_moto_s msg{};
-    //     msg.timestamp = hrt_absolute_time();
+        // 发布LED消息
+        orb_advert_t led_pub = orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
+        if (led_pub != nullptr) {
+            PX4_INFO("Published wbot_led message to cmd1 %d", cmd1);
+        } else {
+            PX4_ERR("Failed to publish wbot_led message");
+        }
+#endif
 
-    //     for ( int n = 0; n < 8; n++)
-    //         msg.speed[n] = 0;
+#ifdef MOTO_TEST
+        // MOTO测试功能（仅当定义MOTO_TEST时编译）
+        struct wbot_ctrl_moto_s moto_msg{};
+        // 设置电机速度（根据需要调整）
+        for (int n = 0; n < 8; n++) {
+            moto_msg.speed[n] = 60;
+            moto_msg.cmd2[n] = cmd2;
+        }
+        moto_msg.timestamp = hrt_absolute_time();
 
-    //     // 发布 topic
-    //     orb_advert_t pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &msg);
+        // 发布MOTO消息
+        orb_advert_t moto_pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &moto_msg);
+        if (moto_pub != nullptr) {
+            PX4_INFO("Published wbot_moto message to cmd1 %d", cmd1);
+        } else {
+            PX4_ERR("Failed to publish wbot_moto message");
+        }
+#endif
 
-    //     if (pub != nullptr) {
-    //         PX4_INFO("Published wbot_moto message to instance %d", instance);
-    //     } else {
-    //         PX4_ERR("Failed to publish wbot_moto message");
-    //     }
-    // }
+    } else {
+#ifdef LED_TEST
+        // LED测试功能（仅当定义LED_TEST时编译）
+        struct wbot_ctrl_led_s led_msg{};
+        led_msg.led_id = cmd2;
+        led_msg.light_value = 0;
+        led_msg.timestamp = hrt_absolute_time();
+
+        // 发布LED消息
+        orb_advert_t led_pub = orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
+        if (led_pub != nullptr) {
+            PX4_INFO("Published wbot_led message to cmd1 %d", cmd1);
+        } else {
+            PX4_ERR("Failed to publish wbot_led message");
+        }
+#endif
 
 
+#ifdef MOTO_TEST
+        // 关闭电机的消息（仅当定义MOTO_TEST时编译）
+        struct wbot_ctrl_moto_s moto_msg{};
+        moto_msg.timestamp = hrt_absolute_time();
+
+        for (int n = 0; n < 8; n++) {
+            moto_msg.speed[n] = 0;  // 停止电机
+        }
+
+        orb_advert_t moto_pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &moto_msg);
+        if (moto_pub != nullptr) {
+            PX4_INFO("Published stop message to wbot_moto (cmd1 %d)", cmd1);
+        } else {
+            PX4_ERR("Failed to publish stop message to wbot_moto");
+        }
+#endif
+    }
 
     return 0;
 }
