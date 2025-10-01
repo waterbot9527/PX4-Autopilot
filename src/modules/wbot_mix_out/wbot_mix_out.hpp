@@ -55,8 +55,8 @@ private:
 	uint32_t mycnt = 0;
 	struct wbot_ctrl_moto_s moto_msg{};
 	struct wbot_ctrl_led_s led_msg{};
-	uint16_t led_button_value;
-	uint16_t led_button_lastvalue;
+	uint16_t led_button_value{0};
+	uint16_t led_button_lastvalue{0};
 
 	uint16_t reboot_button_value{0};
 	uint16_t reboot_button_lastvalue{0};

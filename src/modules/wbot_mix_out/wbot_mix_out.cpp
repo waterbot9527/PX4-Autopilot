@@ -151,7 +151,7 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	if(led_button_value != led_button_lastvalue)
 	{
 		led_msg.led_id = 0;
-		led_msg.light_value = led_msg.light_value + 32;
+		led_msg.light_value = led_msg.light_value + 16;
 		led_msg.timestamp = hrt_absolute_time();
         	orb_advert_t led_pub = orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
 		if (led_pub != nullptr) {
@@ -159,11 +159,9 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		} else {
 		PX4_ERR("Failed to publish wbot_led message");
 		}
-	}
-	else
-	{
 		led_button_lastvalue = led_button_value;
 	}
+
 
 	PX4_INFO(" led_button_value = %d\n ", led_button_value);
 
@@ -178,9 +176,6 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		} else {
 			PX4_ERR("Failed to publish 0b10 wbot_led message");
 		}
-	}
-	else
-	{
 		reboot_button_lastvalue = reboot_button_value;
 	}
 	PX4_INFO(" reboot_button_value = %d\n ", reboot_button_value);
