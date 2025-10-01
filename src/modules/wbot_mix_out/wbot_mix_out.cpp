@@ -167,6 +167,24 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 
 	PX4_INFO(" led_button_value = %d\n ", led_button_value);
 
+	reboot_button_value = 0b10 & outputs[5]; // 按钮？？
+	if(reboot_button_value != reboot_button_lastvalue)
+	{
+		led_msg.led_id = 1;
+		led_msg.timestamp = hrt_absolute_time();
+        	orb_advert_t led_pub = orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
+		if (led_pub != nullptr) {
+			PX4_INFO("Published wbot_led 0b10 message to cmd1 ");
+		} else {
+			PX4_ERR("Failed to publish 0b10 wbot_led message");
+		}
+	}
+	else
+	{
+		reboot_button_lastvalue = reboot_button_value;
+	}
+	PX4_INFO(" reboot_button_value = %d\n ", reboot_button_value);
+
         // 发布LED消息
 
 

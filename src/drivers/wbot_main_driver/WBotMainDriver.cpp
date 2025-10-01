@@ -139,8 +139,16 @@ void WBotMainDriver::RunImpl()
 	if (updated) {
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
-		McuCmdHelper::set_led_value( &send_recv_cache[cmd_size] , data.light_value );
-		cmd_size += 2;
+		if ( data.led_id == 0 )
+		{
+			McuCmdHelper::set_led_value( &send_recv_cache[cmd_size] , data.light_value );
+			cmd_size += 2;
+		}
+		if ( data.led_id == 1 )
+		{
+			McuCmdHelper::set_reboot_value( &send_recv_cache[cmd_size] , data.light_value );
+			cmd_size += 2;
+		}
 	}
 	if ( cmd_size > 1 )
 	{

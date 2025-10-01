@@ -51,4 +51,12 @@ public :
 	}
 
 
+	static bool set_reboot_value(uint8_t *cmd, uint8_t value )
+	{
+		cmd[0] = MCU_CMD_TYPE_REBOOT;
+		cmd[1] = value;
+		return true;
+	}
+
+
 };

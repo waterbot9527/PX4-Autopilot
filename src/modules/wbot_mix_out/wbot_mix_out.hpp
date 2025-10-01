@@ -58,6 +58,9 @@ private:
 	uint16_t led_button_value;
 	uint16_t led_button_lastvalue;
 
+	uint16_t reboot_button_value{0};
+	uint16_t reboot_button_lastvalue{0};
+
 	MixingOutput _mixing_output{PARAM_PREFIX, 8, *this, MixingOutput::SchedulingPolicy::Auto, false};
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
