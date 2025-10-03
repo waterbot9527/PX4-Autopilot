@@ -1,9 +1,6 @@
 
 #include "wbot_mix_out.hpp"
 #include <cstdlib>
-#include <iostream>
-#include <fstream>
-#include <string>
 
 
 using namespace time_literals;
@@ -11,21 +8,25 @@ using namespace time_literals;
 
 static void set_raspberry_led(bool on_off)
 {
-	const std::string pwm_path = "/sys/class/pwm/pwmchip0/pwm0/duty_cycle";
-	const uint32_t max_duty_cycle = 200000;
+    const char *pwm_path = "/sys/class/pwm/pwmchip0/pwm0/duty_cycle";
+    const uint32_t max_duty_cycle = 200000;
 
-	// 打开文件（写模式，自动创建/覆盖）
-	std::ofstream f(pwm_path);
-	if (!f) {
-		PX4_ERR("Failed to open file: %s", pwm_path.c_str());
-		return ;
-	}
+    // 以写模式打开文件（w = 覆盖写入）
+    FILE *f = fopen(pwm_path, "w");
+    if (!f) {
+        perror("Failed to open file");
+        return;
+    }
 
-	if ( on_off )
-		f << int(max_duty_cycle*0.6);  //临时方案： 固定 60% 亮度
-	else
-		f << "0";
+    if (on_off) {
+        // 写入 60% 占空比
+        fprintf(f, "%u", (unsigned int)(max_duty_cycle * 0.6));
+    } else {
+        // 写入 0
+        fprintf(f, "0");
+    }
 
+    fclose(f);  // 关闭文件
 }
 
 WBotMixOut::WBotMixOut():
