@@ -58,6 +58,9 @@ private:
 	uint16_t led_button_value{0};
 	uint16_t led_button_lastvalue{0};
 
+	uint16_t raspberry_led_button_value{0};
+	uint16_t raspberry_led_button_lastvalue{0};
+
 	uint16_t reboot_button_value{0};
 	uint16_t reboot_button_lastvalue{0};
 

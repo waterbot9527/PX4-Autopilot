@@ -1,9 +1,32 @@
 
 #include "wbot_mix_out.hpp"
 #include <cstdlib>
+#include <iostream>
+#include <fstream>
+#include <string>
+
 
 using namespace time_literals;
 
+
+static void set_raspberry_led(bool on_off)
+{
+	const std::string pwm_path = "/sys/class/pwm/pwmchip0/pwm0/duty_cycle";
+	const uint32_t max_duty_cycle = 200000;
+
+	// 打开文件（写模式，自动创建/覆盖）
+	std::ofstream f(pwm_path);
+	if (!f) {
+		PX4_ERR("Failed to open file: %s", pwm_path.c_str());
+		return ;
+	}
+
+	if ( on_off )
+		f << int(max_duty_cycle*0.6);  //临时方案： 固定 60% 亮度
+	else
+		f << "0";
+
+}
 
 WBotMixOut::WBotMixOut():
 	OutputModuleInterface(MODULE_NAME, px4::wq_configurations::hp_default)
@@ -160,6 +183,14 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		PX4_ERR("Failed to publish wbot_led message");
 		}
 		led_button_lastvalue = led_button_value;
+	}
+
+
+	raspberry_led_button_value = 0b100 & outputs[5];
+	if(raspberry_led_button_value != raspberry_led_button_lastvalue)
+	{
+		set_raspberry_led( raspberry_led_button_value > 0 );
+		raspberry_led_button_lastvalue = raspberry_led_button_value;
 	}
 
 
