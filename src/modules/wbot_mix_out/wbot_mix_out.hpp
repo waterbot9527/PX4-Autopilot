@@ -26,6 +26,7 @@ class WBotMixOut : public ModuleBase<WBotMixOut>, public OutputModuleInterface
 {
 public:
 	WBotMixOut();
+	~WBotMixOut() override;
 
 	/** @see ModuleBase */
 	static int task_spawn(int argc, char *argv[]);
@@ -53,8 +54,10 @@ private:
 	void Run() override;
 
 	uint32_t mycnt = 0;
-	struct wbot_ctrl_moto_s moto_msg{};
-	struct wbot_ctrl_led_s led_msg{};
+	orb_advert_t _led_pub;
+	orb_advert_t _moto_pub;
+	struct wbot_ctrl_moto_s _moto_msg{};
+	struct wbot_ctrl_led_s _led_msg{};
 	uint16_t led_button_value{0};
 	uint16_t led_button_lastvalue{0};
 
@@ -67,5 +70,6 @@ private:
 	MixingOutput _mixing_output{PARAM_PREFIX, 8, *this, MixingOutput::SchedulingPolicy::Auto, false};
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
+	void _init_orb_publishers();
 
 };

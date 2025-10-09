@@ -100,7 +100,7 @@ bool WBotMainDriver::Reset()
 
 	ScheduleClear();
 
-	uint32_t interva_delay_us = 2*1000;
+	uint32_t interva_delay_us = 3*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
 
 	return true;
@@ -193,23 +193,23 @@ void WBotMainDriver::RunImpl()
 		break;
 	}
 
-	// if ( ret < 0 )
-	// {
+	if ( ret < 0 )
+	{
 
-	// 	uint8_t id = get_device_address();
-	// 	// if (id == 1)
-	// 	// {
-	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
-	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
-	// 		if (i % 16 == 0) {
-	// 			PX4_INFO("\n ");  // 换行后显示起始索引
-	// 		}
-	// 		printf("%02x ", send_recv_cache[i]);
-	// 	}
-	// 	// }
+		uint8_t id = get_device_address();
+		// if (id == 1)
+		// {
+			PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
+			for (int i = 0; i < SPI_BUF_SIZE; i++) {
+			if (i % 16 == 0) {
+				PX4_INFO("\n ");  // 换行后显示起始索引
+			}
+			printf("%02x ", send_recv_cache[i]);
+		}
+		// }
 
 
-	// }
+	}
 
 
 	// get data ok

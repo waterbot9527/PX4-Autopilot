@@ -9,7 +9,7 @@ using namespace time_literals;
 static void set_raspberry_led(double pwm_value)
 {
     const char *pwm_path = "/sys/class/pwm/pwmchip0/pwm0/duty_cycle";
-    const uint32_t max_duty_cycle = 200000;
+    const uint32_t max_duty_cycle = 200000-1;
 
     // 以写模式打开文件（w = 覆盖写入）
     FILE *f = fopen(pwm_path, "w");
@@ -26,9 +26,7 @@ static void set_raspberry_led(double pwm_value)
     {
 	pwm_value = 1.0;
     }
-        // 写入 60% 占空比
-	fprintf(f, "%u", (unsigned int)(max_duty_cycle * pwm_value));
-
+    fprintf(f, "%u", (unsigned int)(max_duty_cycle * pwm_value));
 
     fclose(f);  // 关闭文件
 }
@@ -37,6 +35,40 @@ WBotMixOut::WBotMixOut():
 	OutputModuleInterface(MODULE_NAME, px4::wq_configurations::hp_default)
 {
 
+}
+WBotMixOut::~WBotMixOut()
+{
+    if (_moto_pub != nullptr) {
+        orb_unadvertise(_moto_pub);
+        _moto_pub = nullptr;
+    }
+    if (_led_pub != nullptr) {
+        orb_unadvertise(_led_pub);
+        _led_pub = nullptr;
+    }
+}
+
+void WBotMixOut::_init_orb_publishers()
+{
+    // 初始化电机消息发布者
+    if (_moto_pub == nullptr) {
+        _moto_pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &_moto_msg);
+        if (_moto_pub == nullptr) {
+            PX4_ERR("Failed to advertise wbot_ctrl_moto topic");
+        } else {
+            PX4_INFO("Successfully advertised wbot_ctrl_moto topic");
+        }
+    }
+
+    // 初始化 LED 消息发布者
+    if (_led_pub == nullptr) {
+        _led_pub = orb_advertise(ORB_ID(wbot_ctrl_led), &_led_msg);
+        if (_led_pub == nullptr) {
+            PX4_ERR("Failed to advertise wbot_ctrl_led topic");
+        } else {
+            PX4_INFO("Successfully advertised wbot_ctrl_led topic");
+        }
+    }
 }
 
 int WBotMixOut::print_status()
@@ -49,6 +81,12 @@ void WBotMixOut::Run()
 {
 	// auto _now = hrt_absolute_time();
 	// PX4_INFO("wbot mix out running= %lu", (uint64_t)_now);
+
+	static bool _orb_inited = false;
+	if (!_orb_inited) {
+		_init_orb_publishers();
+		_orb_inited = true;  // 标记为已初始化，后续不再执行
+	}
 	_mixing_output.update();
 
 
@@ -157,78 +195,67 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	{
 		if ( f_speed[n] >= 0 ) {
 
-			moto_msg.direction[n] = 1;
+			_moto_msg.direction[n] = 1;
 		} else {
-			moto_msg.direction[n] = 0;
+			_moto_msg.direction[n] = 0;
 		}
 
 		int32_t abs_speed = (int32_t)(std::abs(f_speed[n]));
 		if ( abs_speed > 255 )
 			abs_speed = 255;
-		if ( abs_speed < 3 )
+		if ( abs_speed < 20 )
 			abs_speed = 0;
 
-		moto_msg.speed[n] = abs_speed;
+		_moto_msg.speed[n] = abs_speed;
 	}
 
-        moto_msg.timestamp = hrt_absolute_time();
+        _moto_msg.timestamp = hrt_absolute_time();
+        if (_moto_pub != nullptr) {  // 检查发布者是否有效
+        orb_publish(ORB_ID(wbot_ctrl_moto), _moto_pub, &_moto_msg);
+	} else {
+		PX4_ERR("Failed to publish wbot_ctrl_moto: publisher not inited");
+	}
 
 
-        // 发布 topic
-        //orb_advert_t pub = ;
-	orb_advertise(ORB_ID(wbot_ctrl_moto), &moto_msg);
 	led_button_value = 0x1 & outputs[5];
 	if(led_button_value != led_button_lastvalue)
 	{
 		double raspberry_pwm;
-		led_msg.led_id = 0;
-		led_msg.light_value = led_msg.light_value + 16;
-		raspberry_pwm = led_msg.light_value / 255;
+		_led_msg.led_id = 0;
+		_led_msg.light_value = _led_msg.light_value + 16;
+		raspberry_pwm = _led_msg.light_value / 255.0;
 		if (raspberry_pwm > 1.0)
 		{
 			raspberry_pwm = 0.0;
 		}
 		set_raspberry_led(raspberry_pwm);
-		led_msg.timestamp = hrt_absolute_time();
-        	// orb_advert_t led_pub =
-		orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
-		// if (led_pub != nullptr) {
-		// PX4_INFO("Published wbot_led message to cmd1 ");
-		// } else {
-		// PX4_ERR("Failed to publish wbot_led message");
-		// }
+		_led_msg.timestamp = hrt_absolute_time();
+		if (_led_pub != nullptr) {
+            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+            		// PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
+
+		} else {
+			PX4_ERR("Failed to publish wbot_led: publisher not inited");
+		}
 		led_button_lastvalue = led_button_value;
 	}
-
-	// raspberry_led_button_value = 0b100 & outputs[5];
-	// if(raspberry_led_button_value != raspberry_led_button_lastvalue)
-	// {
-	// 	set_raspberry_led( raspberry_led_button_value > 0 );
-	// 	raspberry_led_button_lastvalue = raspberry_led_button_value;
-	// }
-
-
-	// PX4_INFO(" led_button_value = %d\n ", led_button_value);
 
 	reboot_button_value = 0b10 & outputs[5]; // 按钮？？
 	if(reboot_button_value != reboot_button_lastvalue)
 	{
-		led_msg.led_id = 1;
-		led_msg.timestamp = hrt_absolute_time();
-        	// orb_advert_t led_pub =
-		orb_advertise(ORB_ID(wbot_ctrl_led), &led_msg);
-		// if (led_pub != nullptr) {
-		// 	PX4_INFO("Published wbot_led 0b10 message to cmd1 ");
-		// } else {
-		// 	PX4_ERR("Failed to publish 0b10 wbot_led message");
-		// }
+		_led_msg.led_id = 1;
+		_led_msg.timestamp = hrt_absolute_time();
+		if (_led_pub != nullptr) {
+			orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+			// PX4_INFO("Published wbot_led message (Reboot button)");  // 调试用
+		} else {
+			PX4_ERR("Failed to publish wbot_led: publisher not inited");
+		}
 		reboot_button_lastvalue = reboot_button_value;
 	}
 	// PX4_INFO(" reboot_button_value = %d\n ", reboot_button_value);
 
         // 发布LED消息
-
-
 
 #endif
 
