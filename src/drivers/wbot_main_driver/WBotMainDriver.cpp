@@ -121,8 +121,8 @@ void WBotMainDriver::RunImpl()
 	if (updated) {
 		struct wbot_ctrl_moto_s data;
 		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
-		PX4_INFO("dev(%i) Got new data: %i %i",
-			get_device_address(), data.speed[0], data.speed[1]);
+		// PX4_INFO("dev(%i) Got new data: %i %i",
+		// 	get_device_address(), data.speed[0], data.speed[1]);
 
 		uint32_t board_id = get_device_address();
 
@@ -155,12 +155,12 @@ void WBotMainDriver::RunImpl()
 		send_recv_cache[0] = cmd_size;
 		uint32_t crc_calc = wbot_crc32(send_recv_cache, cmd_size);
 
-		printf("crc (%d)= \n", get_device_address() );
-		for(uint32_t n = 0; n < cmd_size; n++)
-		{
-			printf("0x%02x,", send_recv_cache[n]);
-		}
-		printf("\ncrc = %x\n", crc_calc);
+		// printf("crc (%d)= \n", get_device_address() );
+		// for(uint32_t n = 0; n < cmd_size; n++)
+		// {
+		// 	printf("0x%02x,", send_recv_cache[n]);
+		// }
+		// printf("\ncrc = %x\n", crc_calc);
 
 		memcpy( &send_recv_cache[cmd_size], &crc_calc, sizeof(uint32_t));
 		cmd_size += sizeof(uint32_t);
@@ -193,19 +193,23 @@ void WBotMainDriver::RunImpl()
 		break;
 	}
 
-	if ( ret < 0 )
-	{
+	// if ( ret < 0 )
+	// {
 
-		// uint8_t id = get_device_address();
-		// PX4_INFO("spi %d send_recv_cache recv bytes:",id);
-		// for (int i = 0; i < SPI_BUF_SIZE; i++) {
-		// 	if (i % 16 == 0) {
-		// 		PX4_INFO("\n ");  // 换行后显示起始索引
-		// 	}
-		// 	PX4_INFO("%02x ", send_recv_cache[i]);
-		// }
-		// PX4_INFO("");
-	}
+	// 	uint8_t id = get_device_address();
+	// 	// if (id == 1)
+	// 	// {
+	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
+	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
+	// 		if (i % 16 == 0) {
+	// 			PX4_INFO("\n ");  // 换行后显示起始索引
+	// 		}
+	// 		printf("%02x ", send_recv_cache[i]);
+	// 	}
+	// 	// }
+
+
+	// }
 
 
 	// get data ok
@@ -307,11 +311,11 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
                 	lsm6dsv16x_from_fs1000_to_mdps(*datax);
                 	lsm6dsv16x_from_fs1000_to_mdps(*datay);
                 	lsm6dsv16x_from_fs1000_to_mdps(*dataz);
-			WMD_DEBUG("gray x,y,z=%f %f %f\n",
-				(double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
-				(double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
-				(double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
-			);
+			// PX4_INFO("gray x,y,z=%f %f %f\n",
+			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
+			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
+			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
+			// );
           		break;
 		}
 		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
@@ -322,11 +326,11 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 			lis2mdl_from_lsb_to_mgauss(*datay);
 			lis2mdl_from_lsb_to_mgauss(*dataz);
 
-			WMD_DEBUG("guass x,y,z=%f %f %f\n",
-				(double)lis2mdl_from_lsb_to_mgauss(*datax),
-				(double)lis2mdl_from_lsb_to_mgauss(*datay),
-				(double)lis2mdl_from_lsb_to_mgauss(*dataz)
-			);
+			// WMD_DEBUG("guass x,y,z=%f %f %f\n",
+			// 	(double)lis2mdl_from_lsb_to_mgauss(*datax),
+			// 	(double)lis2mdl_from_lsb_to_mgauss(*datay),
+			// 	(double)lis2mdl_from_lsb_to_mgauss(*dataz)
+			// );
 			break;
 		}
 		case 0: //LSM6DSV16X_FIFO_EMPTY:
@@ -365,7 +369,11 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
                         (data[total_len-2]<<16) | (data[total_len-1]<<24);
     uint32_t crc_calc = wbot_crc32(data, total_len-4);
 
-    if (crc_recv != crc_calc) return -5;
+    if (crc_recv != crc_calc)
+    {
+	// PX4_INFO("crc_recv = 0x%04x ,crc_calc = 0x%04x", crc_recv, crc_calc);
+	return -5;
+    }
 
     // 解析有效数据
     uint32_t index = packet_head_size; // 跳过包头 字段
@@ -440,7 +448,7 @@ int WBotMainDriver::parse_spi_data(uint8_t *data) {
 
 void WBotMainDriver::print_status()
 {
-	PX4_INFO("Water Robot Main Driver status");
+	PX4_INFO("Water Robot Main Driver status dev_id=%i", get_device_address() );
 	I2CSPIDriverBase::print_status();
 
 	perf_print_counter(_bad_packhead_perf);
@@ -460,3 +468,20 @@ void WBotMainDriver::exit_and_cleanup()
 {
 	I2CSPIDriverBase::exit_and_cleanup();
 }
+	// if ( ret < 0 )
+	// {
+
+	// 	uint8_t id = get_device_address();
+	// 	// if (id == 1)
+	// 	// {
+	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
+	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
+	// 		if (i % 16 == 0) {
+	// 			PX4_INFO("\n ");  // 换行后显示起始索引
+	// 		}
+	// 		printf("%02x ", send_recv_cache[i]);
+	// 	}
+	// 	// }
+
+
+	// }
