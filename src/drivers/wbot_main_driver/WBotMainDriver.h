@@ -77,6 +77,7 @@ private:
 	PX4Magnetometer _px4_mag;
 
 	orb_advert_t _water_press_pub = nullptr;
+	orb_advert_t _water_temp_pub = nullptr;
 
 
 	hrt_abstime _now = hrt_absolute_time();

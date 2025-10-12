@@ -142,6 +142,7 @@ void WBotMainDriver::RunImpl()
 		if ( data.led_id == 0 )
 		{
 			McuCmdHelper::set_led_value( &send_recv_cache[cmd_size] , data.light_value );
+			// PX4_INFO("light_value = %d",data.light_value);
 			cmd_size += 2;
 		}
 		if ( data.led_id == 1 )
@@ -193,23 +194,23 @@ void WBotMainDriver::RunImpl()
 		break;
 	}
 
-	if ( ret < 0 )
-	{
+	// if ( ret < 0 )
+	// {
 
-		uint8_t id = get_device_address();
-		// if (id == 1)
-		// {
-			PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
-			for (int i = 0; i < SPI_BUF_SIZE; i++) {
-			if (i % 16 == 0) {
-				PX4_INFO("\n ");  // 换行后显示起始索引
-			}
-			printf("%02x ", send_recv_cache[i]);
-		}
-		// }
+	// 	uint8_t id = get_device_address();
+	// 	// if (id == 1)
+	// 	// {
+	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
+	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
+	// 		if (i % 16 == 0) {
+	// 			PX4_INFO("\n ");  // 换行后显示起始索引
+	// 		}
+	// 		printf("%02x ", send_recv_cache[i]);
+	// 	}
+	// 	// }
 
 
-	}
+	// }
 
 
 	// get data ok
@@ -254,16 +255,30 @@ bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 	(void)pressure_mbar;
 	//todo： publish data
 
-	debug_key_value_s pressure_mbar_msg ;
-	snprintf(pressure_mbar_msg.key, 10, "x");
-	pressure_mbar_msg.timestamp = _now;
-	pressure_mbar_msg.value = pressure_mbar;
+	static uint8_t num;
+	if ((num++%2) == 0 )
+	{
+		debug_key_value_s pressure_mbar_msg ;
+		snprintf(pressure_mbar_msg.key, 10, "x");
+		pressure_mbar_msg.timestamp = _now;
+		pressure_mbar_msg.value = pressure_mbar;
 
-	if ( _water_press_pub == nullptr)
-		_water_press_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_mbar_msg);
+		if ( _water_press_pub == nullptr)
+			_water_press_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_mbar_msg);
+		else
+			orb_publish(ORB_ID(debug_key_value), _water_press_pub, &pressure_mbar_msg);
+	}
 	else
-		orb_publish(ORB_ID(debug_key_value), _water_press_pub, &pressure_mbar_msg);
-
+	{
+		debug_key_value_s pressure_temp_msg ;
+		snprintf(pressure_temp_msg.key, 10, "z");
+		pressure_temp_msg.timestamp = _now;
+		pressure_temp_msg.value = temperature_celsius;
+		if ( _water_temp_pub == nullptr)
+			_water_temp_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_temp_msg);
+		else
+			orb_publish(ORB_ID(debug_key_value), _water_temp_pub, &pressure_temp_msg);
+	}
 
 	return true;
 }

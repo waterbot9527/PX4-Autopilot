@@ -143,14 +143,14 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	[ 0*255*0.56, 0.2*255*0.56 .... ]
 	*/
 	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
-		{ +0.0, +0.0, +1.0, +1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
-		{ -0.0, -0.0, -1.0, -1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
-		{ +0.0, +0.0, +0.0, +0.0, +1.0, +0.0, +0.0, +1.0 }, /* 摇杆1-Y-U */
-		{ +0.0, +0.0, -0.0, -0.0, -1.0, +0.0, +0.0, -1.0 }, /* 摇杆1-Y-D */
+		{ +0.0, +0.0, +1.0, -1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
+		{ -0.0, -0.0, -1.0, +1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+		{ +0.0, +0.0, +0.0, +0.0, -1.0, +0.0, +0.0, +1.0 }, /* 摇杆1-Y-U */
+		{ +0.0, +0.0, -0.0, -0.0, +1.0, +0.0, +0.0, -1.0 }, /* 摇杆1-Y-D */
 		{ +1.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆2-X-U */
 		{ -1.0, +0.0, +0.0, +0.0, +0.0, +0.0, -0.0, -0.0 }, /* 摇杆2-X-D */
-		{ +0.0, +1.0, +0.0, +0.0, +0.0, +1.0, +1.0, +0.0 }, /* 摇杆2-Y-L */
-		{ +0.0, -1.0, +0.0, +0.0, -0.0, -1.0, -1.0, +0.0 }  /* 摇杆2-Y-R */
+		{ +0.0, +1.0, +0.0, +0.0, +0.0, +1.0, -1.0, +0.0 }, /* 摇杆2-Y-L */
+		{ +0.0, -1.0, +0.0, +0.0, -0.0, -1.0, +1.0, +0.0 }  /* 摇杆2-Y-R */
 	};
 
 	//only for debug
@@ -217,17 +217,22 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	}
 
 
-	led_button_value = 0x1 & outputs[5];
-	if(led_button_value != led_button_lastvalue)
+	led_increase_button_value = 0x1 & outputs[5];
+	if((led_increase_button_value == 0x1 )&&  (led_increase_button_value!= led_increase_button_lastvalue))
 	{
 		double raspberry_pwm;
 		_led_msg.led_id = 0;
-		_led_msg.light_value = _led_msg.light_value + 16;
-		raspberry_pwm = _led_msg.light_value / 255.0;
-		if (raspberry_pwm > 1.0)
+
+		if (_led_msg.light_value >= 240)
 		{
-			raspberry_pwm = 0.0;
+			_led_msg.light_value = 240;
 		}
+		else
+		{
+			_led_msg.light_value += 16;
+		}
+
+		raspberry_pwm = _led_msg.light_value / 255.0;
 		set_raspberry_led(raspberry_pwm);
 		_led_msg.timestamp = hrt_absolute_time();
 		if (_led_pub != nullptr) {
@@ -237,8 +242,35 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		} else {
 			PX4_ERR("Failed to publish wbot_led: publisher not inited");
 		}
-		led_button_lastvalue = led_button_value;
 	}
+		led_increase_button_lastvalue = led_increase_button_value;
+
+	led_decrease_button_value = 0x4 & outputs[5];
+	if((led_decrease_button_value == 0x4 )&&  (led_decrease_button_value!= led_decrease_button_lastvalue))
+	{
+		double raspberry_pwm;
+		_led_msg.led_id = 0;
+		if (_led_msg.light_value <= 0)
+		{
+			_led_msg.light_value = 0;
+		}
+		else
+		{
+			_led_msg.light_value -= 16;
+		}
+
+		raspberry_pwm = _led_msg.light_value / 255.0;
+		set_raspberry_led(raspberry_pwm);
+		_led_msg.timestamp = hrt_absolute_time();
+		if (_led_pub != nullptr) {
+            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+            		// PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
+
+		} else {
+			PX4_ERR("Failed to publish wbot_led: publisher not inited");
+		}
+	}
+		led_decrease_button_lastvalue = led_decrease_button_value;
 
 	reboot_button_value = 0b10 & outputs[5]; // 按钮？？
 	if(reboot_button_value != reboot_button_lastvalue)

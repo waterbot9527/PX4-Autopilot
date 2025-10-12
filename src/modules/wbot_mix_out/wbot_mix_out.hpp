@@ -58,11 +58,11 @@ private:
 	orb_advert_t _moto_pub;
 	struct wbot_ctrl_moto_s _moto_msg{};
 	struct wbot_ctrl_led_s _led_msg{};
-	uint16_t led_button_value{0};
-	uint16_t led_button_lastvalue{0};
+	uint16_t led_increase_button_value{0};
+	uint16_t led_increase_button_lastvalue{0};
+	uint16_t led_decrease_button_value{0};
+	uint16_t led_decrease_button_lastvalue{0};
 
-	uint16_t raspberry_led_button_value{0};
-	uint16_t raspberry_led_button_lastvalue{0};
 
 	uint16_t reboot_button_value{0};
 	uint16_t reboot_button_lastvalue{0};
