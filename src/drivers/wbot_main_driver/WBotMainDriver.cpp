@@ -100,7 +100,7 @@ bool WBotMainDriver::Reset()
 
 	ScheduleClear();
 
-	uint32_t interva_delay_us = 3*1000;
+	uint32_t interva_delay_us =  10*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
 
 	return true;
@@ -131,7 +131,7 @@ void WBotMainDriver::RunImpl()
 			uint8_t speed = data.speed[i2c_index + board_id*4];
 			uint8_t direction = data.direction[i2c_index + board_id*4];
 
-			McuCmdHelper::set_motor_cmd( &send_recv_cache[cmd_size] , speed, direction, i2c_index );
+			McuCmdHelper::set_motor_cmd( &send_cache[cmd_size] , speed, direction, i2c_index );
 			cmd_size += 2;
 		}
 	}
@@ -139,45 +139,45 @@ void WBotMainDriver::RunImpl()
 	if (updated) {
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
-		if ( data.led_id == 0 )
-		{
-			McuCmdHelper::set_led_value( &send_recv_cache[cmd_size] , data.light_value );
-			// PX4_INFO("light_value = %d",data.light_value);
-			cmd_size += 2;
-		}
+		// if ( data.led_id == 0 )
+		// {
+		// 	McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
+		// 	PX4_INFO("light_value = %d",data.light_value);
+		// 	cmd_size += 2;
+		// }
 		if ( data.led_id == 1 )
 		{
-			McuCmdHelper::set_reboot_value( &send_recv_cache[cmd_size] , data.light_value );
+			McuCmdHelper::set_reboot_value( &send_cache[cmd_size] , data.light_value );
 			cmd_size += 2;
 		}
 	}
 	if ( cmd_size > 1 )
 	{
-		send_recv_cache[0] = cmd_size;
-		uint32_t crc_calc = wbot_crc32(send_recv_cache, cmd_size);
+		send_cache[0] = cmd_size;
+		uint32_t crc_calc = wbot_crc32(send_cache, cmd_size);
 
 		// printf("crc (%d)= \n", get_device_address() );
 		// for(uint32_t n = 0; n < cmd_size; n++)
 		// {
-		// 	printf("0x%02x,", send_recv_cache[n]);
+		// 	printf("0x%02x,", send_cache[n]);
 		// }
 		// printf("\ncrc = %x\n", crc_calc);
 
-		memcpy( &send_recv_cache[cmd_size], &crc_calc, sizeof(uint32_t));
+		memcpy( &send_cache[cmd_size], &crc_calc, sizeof(uint32_t));
 		cmd_size += sizeof(uint32_t);
 	} else {
-		send_recv_cache[0] = 0;
+		send_cache[0] = 0;
 	}
 
 	// TODO: add cmd
-	if (PX4_OK != transfer(send_recv_cache, send_recv_cache, sizeof(send_recv_cache)) )
+	if (PX4_OK != transfer(send_cache, recv_cache, sizeof(recv_cache)) )
 	{
 		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
 		return;
 	}
 
 	_now = hrt_absolute_time();
-	int ret = parse_spi_data(send_recv_cache);
+	int ret = parse_spi_data(recv_cache);
 
 	switch (ret)
 	{
@@ -191,6 +191,7 @@ void WBotMainDriver::RunImpl()
 		perf_count(_bad_crc_err_perf);
 		break;
 	default:
+		perf_count(_right_perf);
 		break;
 	}
 
@@ -198,15 +199,15 @@ void WBotMainDriver::RunImpl()
 	// {
 
 	// 	uint8_t id = get_device_address();
-	// 	// if (id == 1)
+	// 	//if (id == 1)
 	// 	// {
-	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
-	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
-	// 		if (i % 16 == 0) {
-	// 			PX4_INFO("\n ");  // 换行后显示起始索引
-	// 		}
-	// 		printf("%02x ", send_recv_cache[i]);
-	// 	}
+	// 		// PX4_INFO("spi %d recv_cache recv bytes: ,ret = %d",id,ret);
+	// 		// for (int i = 0; i < SPI_BUF_SIZE; i++) {
+	// 		// 	if (i % 16 == 0) {
+	// 		// 		PX4_INFO("\n ");  // 换行后显示起始索引
+	// 		// 	}
+	// 		// 	printf("%02x ", recv_cache[i]);
+	// 		// }
 	// 	// }
 
 
@@ -469,6 +470,10 @@ void WBotMainDriver::print_status()
 	perf_print_counter(_bad_packhead_perf);
 	perf_print_counter(_bad_packtail_perf);
 	perf_print_counter(_bad_crc_err_perf);
+	perf_print_counter(_right_perf);
+	double bad_count = perf_get_event_count(_bad_packhead_perf) + perf_get_event_count( _bad_packtail_perf) + perf_get_event_count(_bad_crc_err_perf);
+	double all_count = bad_count + perf_get_event_count(_right_perf);
+	PX4_INFO("%f ",bad_count / all_count);
 
 }
 
@@ -489,12 +494,12 @@ void WBotMainDriver::exit_and_cleanup()
 	// 	uint8_t id = get_device_address();
 	// 	// if (id == 1)
 	// 	// {
-	// 		PX4_INFO("spi %d send_recv_cache recv bytes: ,ret = %d",id,ret);
+	// 		PX4_INFO("spi %d srecv_cache recv bytes: ,ret = %d",id,ret);
 	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
 	// 		if (i % 16 == 0) {
 	// 			PX4_INFO("\n ");  // 换行后显示起始索引
 	// 		}
-	// 		printf("%02x ", send_recv_cache[i]);
+	// 		printf("%02x ", recv_cache[i]);
 	// 	}
 	// 	// }
 

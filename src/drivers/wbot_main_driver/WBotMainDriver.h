@@ -83,7 +83,8 @@ private:
 	hrt_abstime _now = hrt_absolute_time();
 
 	static const int  SPI_BUF_SIZE = 256;
-	uint8_t send_recv_cache[SPI_BUF_SIZE];
+	uint8_t send_cache[SPI_BUF_SIZE];
+	uint8_t recv_cache[SPI_BUF_SIZE];
 	uint32_t test_cnt = 0;
 
 	int _wbot_moto_sub = -1;
@@ -92,6 +93,9 @@ private:
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
 	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
+	perf_counter_t _right_perf{perf_alloc(PC_COUNT, MODULE_NAME": all_right")};
+
+
 
 	int parse_spi_data(uint8_t *data);
 

@@ -174,6 +174,8 @@ __EXPORT extern void		perf_reset(perf_counter_t handle);
  */
 __EXPORT extern void		perf_print_counter(perf_counter_t handle);
 
+__EXPORT extern double		perf_get_event_count(perf_counter_t handle);
+
 /**
  * Print one performance counter to a buffer.
  *

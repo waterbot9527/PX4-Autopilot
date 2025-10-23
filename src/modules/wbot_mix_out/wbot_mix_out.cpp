@@ -143,14 +143,14 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	[ 0*255*0.56, 0.2*255*0.56 .... ]
 	*/
 	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
-		{ +0.0, +0.0, +1.0, -1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
-		{ -0.0, -0.0, -1.0, +1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+		{ -1.0, +0.0, +0.0, -0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
+		{ +1.0, -0.0, -0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
 		{ +0.0, +0.0, +0.0, +0.0, -1.0, +0.0, +0.0, +1.0 }, /* 摇杆1-Y-U */
 		{ +0.0, +0.0, -0.0, -0.0, +1.0, +0.0, +0.0, -1.0 }, /* 摇杆1-Y-D */
-		{ +1.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆2-X-U */
-		{ -1.0, +0.0, +0.0, +0.0, +0.0, +0.0, -0.0, -0.0 }, /* 摇杆2-X-D */
-		{ +0.0, +1.0, +0.0, +0.0, +0.0, +1.0, -1.0, +0.0 }, /* 摇杆2-Y-L */
-		{ +0.0, -1.0, +0.0, +0.0, -0.0, -1.0, +1.0, +0.0 }  /* 摇杆2-Y-R */
+		{ +0.0, +0.0, -1.0, +1.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆2-X-U */
+		{ -0.0, +0.0, +1.0, -1.0, +0.0, +0.0, -0.0, -0.0 }, /* 摇杆2-X-D */
+		{ +0.0, -1.0, +0.0, +0.0, +0.0, +1.0, -1.0, +0.0 }, /* 摇杆2-Y-L */
+		{ +0.0, +1.0, +0.0, +0.0, -0.0, -1.0, +1.0, +0.0 }  /* 摇杆2-Y-R */
 	};
 
 	//only for debug
@@ -235,13 +235,13 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		raspberry_pwm = _led_msg.light_value / 255.0;
 		set_raspberry_led(raspberry_pwm);
 		_led_msg.timestamp = hrt_absolute_time();
-		if (_led_pub != nullptr) {
-            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-            		// PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
+		// if (_led_pub != nullptr) {
+            	// 	orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+            	// 	PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
 
-		} else {
-			PX4_ERR("Failed to publish wbot_led: publisher not inited");
-		}
+		// } else {
+		// 	PX4_ERR("Failed to publish wbot_led: publisher not inited");
+		// }
 	}
 		led_increase_button_lastvalue = led_increase_button_value;
 
@@ -262,13 +262,13 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		raspberry_pwm = _led_msg.light_value / 255.0;
 		set_raspberry_led(raspberry_pwm);
 		_led_msg.timestamp = hrt_absolute_time();
-		if (_led_pub != nullptr) {
-            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-            		// PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
+		// if (_led_pub != nullptr) {
+            	// 	orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+            	// 	PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
 
-		} else {
-			PX4_ERR("Failed to publish wbot_led: publisher not inited");
-		}
+		// } else {
+		// 	PX4_ERR("Failed to publish wbot_led: publisher not inited");
+		// }
 	}
 		led_decrease_button_lastvalue = led_decrease_button_value;
 
