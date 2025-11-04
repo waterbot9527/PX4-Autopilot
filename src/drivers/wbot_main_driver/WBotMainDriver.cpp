@@ -100,7 +100,7 @@ bool WBotMainDriver::Reset()
 
 	ScheduleClear();
 
-	uint32_t interva_delay_us =  10*1000;
+	uint32_t interva_delay_us = 2*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
 
 	return true;
@@ -139,12 +139,12 @@ void WBotMainDriver::RunImpl()
 	if (updated) {
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
-		// if ( data.led_id == 0 )
-		// {
-		// 	McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
-		// 	PX4_INFO("light_value = %d",data.light_value);
-		// 	cmd_size += 2;
-		// }
+		if ( data.led_id == 0 )
+		{
+			McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
+			PX4_INFO("light_value = %d",data.light_value);
+			cmd_size += 2;
+		}
 		if ( data.led_id == 1 )
 		{
 			McuCmdHelper::set_reboot_value( &send_cache[cmd_size] , data.light_value );
@@ -195,23 +195,22 @@ void WBotMainDriver::RunImpl()
 		break;
 	}
 
-	// if ( ret < 0 )
-	// {
+	if ( ret < 0 )
+	{
 
-	// 	uint8_t id = get_device_address();
-	// 	//if (id == 1)
-	// 	// {
-	// 		// PX4_INFO("spi %d recv_cache recv bytes: ,ret = %d",id,ret);
-	// 		// for (int i = 0; i < SPI_BUF_SIZE; i++) {
-	// 		// 	if (i % 16 == 0) {
-	// 		// 		PX4_INFO("\n ");  // 换行后显示起始索引
-	// 		// 	}
-	// 		// 	printf("%02x ", recv_cache[i]);
-	// 		// }
-	// 	// }
+		// uint8_t id = get_device_address();
+		// if (id == 1)
+		// {
+		// 	PX4_INFO("spi %d recv_cache recv bytes: ,ret = %d",id,ret);
+		// 	for (int i = 0; i < SPI_BUF_SIZE; i++) {
+		// 		if (i % 16 == 0) {
+		// 			PX4_INFO("\n ");  // 换行后显示起始索引
+		// 		}
+		// 		printf("%02x ", recv_cache[i]);
+		// 	}
+		// }
 
-
-	// }
+	}
 
 
 	// get data ok
@@ -473,6 +472,8 @@ void WBotMainDriver::print_status()
 	perf_print_counter(_right_perf);
 	double bad_count = perf_get_event_count(_bad_packhead_perf) + perf_get_event_count( _bad_packtail_perf) + perf_get_event_count(_bad_crc_err_perf);
 	double all_count = bad_count + perf_get_event_count(_right_perf);
+	PX4_INFO("failt count %f ",bad_count);
+	PX4_INFO("totle count %f ",all_count);
 	PX4_INFO("%f ",bad_count / all_count);
 
 }
