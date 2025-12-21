@@ -32,55 +32,10 @@
  ****************************************************************************/
 
 #include "WBotMainDriver.h"
-#include <px4_platform_common/module.h>
-#include <drivers/drv_sensor.h>
 
+extern "C" __EXPORT int wbot_main_driver_main(int argc, char *argv[]);
 
-//extern "C" __EXPORT int wbot_main_driver_main(int argc, char *argv[]);
-
-void
-WBotMainDriver::print_usage()
+int wbot_main_driver_main(int argc, char *argv[])
 {
-	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
-	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_PARAMS_I2C_SPI_DRIVER(false, true);
-	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
-}
-
-extern "C" int
-wbot_main_driver_main(int argc, char *argv[])
-{
-	using ThisDriver = WBotMainDriver;
-	BusCLIArguments cli{false, true};
-	cli.spi_mode = SPIDEV_MODE0;
-	cli.default_spi_frequency = 1000*1000*10; // 8MHz default
-
-	while (cli.getOpt(argc, argv, "") != EOF) {
-		// No additional options for now
-	}
-
-	const char *verb = cli.optArg();
-
-	if (!verb) {
-		ThisDriver::print_usage();
-		return -1;
-	}
-
-	// Use a custom device type for water robot
-	BusInstanceIterator iterator(MODULE_NAME, cli, DRV_WATERBOT_MAIN_DRIVER);
-
-	if (!strcmp(verb, "start")) {
-		return ThisDriver::module_start(cli, iterator);
-	}
-
-	if (!strcmp(verb, "stop")) {
-		return ThisDriver::module_stop(iterator);
-	}
-
-	if (!strcmp(verb, "status")) {
-		return ThisDriver::module_status(iterator);
-	}
-
-	ThisDriver::print_usage();
-	return -1;
+	return WBotMainDriver::main(argc, argv);
 }

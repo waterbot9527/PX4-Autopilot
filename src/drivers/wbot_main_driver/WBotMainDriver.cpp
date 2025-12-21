@@ -21,7 +21,7 @@
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
  * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
  * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMages (INCLUDING,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
  * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
  * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
  * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
@@ -31,90 +31,179 @@
  *
  ****************************************************************************/
 
-/**
- * @file WBotMainDriver.cpp
- */
+#include <termios.h>
+#include <glob.h>
+#include <unistd.h>
+#include <limits.h>
+#include <stdint.h>
 
+#include "wbot_mcu_cmd.hpp"
+#include "wbot_mcu_def.h"
 #include "WBotMainDriver.h"
-#include <px4_platform_common/time.h>
+#include <px4_platform_common/getopt.h>
+#include <drivers/device/device.h>
 #include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
-#include <string.h>
-#include "wbot_mcu_cmd.hpp"
-#include "spi_mcu_def.h"
 #include "lsm6dsv16_utils.h"
-
-
 
 
 using namespace time_literals;
 
-
-#define WMD_DEBUG(...) do {} while(0)
-//#define WMD_DEBUG(...) printf(__VA_ARGS__)
-
-
-WBotMainDriver::WBotMainDriver(const I2CSPIDriverConfig &config) :
-	SPI(config),
-	I2CSPIDriver(config),
-	_px4_accel(get_device_id(), config.rotation),
-	_px4_gyro(get_device_id(), config.rotation),
-	_px4_mag(get_device_id(), config.rotation)
+/*
+查找所有的 usb 串口设备
+*/
+static uint32_t list_tty(char *serial_name[2])
 {
+	const char *pattern = "/sys/class/tty/ttyACM*";
+	glob_t g;
+	uint32_t i = 0;
+	uint32_t ret = 0;
+	memset(&g, 0, sizeof(g));
+
+	if (glob(pattern, 0, NULL, &g) != 0) {
+		globfree(&g);
+		return 0;
+	}
+
+	for (i = 0; i < g.gl_pathc && i < 2; i++) {
+		const char *path = g.gl_pathv[i];
+		const char *name = strrchr(path, '/');
+		name = name ? name + 1 : path;
+
+		char devnode[PATH_MAX];
+		char realdev[PATH_MAX];
+
+		snprintf(devnode, sizeof(devnode), "/dev/%s", name);
+		if (realpath(path, realdev) == NULL) {
+			strncpy(realdev, "(unresolved)", sizeof(realdev));
+		} else {
+			// like : /sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1:1.0/ttyACM0/tty/ttyACM0
+			strcpy(serial_name[i], devnode);
+			printf("  sysfs    : %s\n\n", realdev);
+			ret++;
+		}
+
+
+	}
+
+	globfree(&g);
+	return ret;
+}
+
+static int read_full_packet(int serial_fd, uint8_t *data)
+{
+	int ret;
+	int n = 0;
+	for(n = 0; n < 128; n++)
+	{
+		ret = ::read(serial_fd, data, 1);
+		if ( ret != 1 )
+			return -1;
+
+		if (data[0] == 0x5a) {
+			break;
+		}
+	}
+	if ( n == 128 )
+		return -1;
+
+	ret = ::read(serial_fd, data+1, 3 );
+	if ( ret != 3 )
+		return -1;
+
+	if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d )
+		return -1;
+
+	ret = ::read(serial_fd, data+4, 1 );
+	if ( ret != 1 )
+		return -1;
+	uint8_t total_length = data[4];
+
+	ret = ::read(serial_fd, data+5, total_length-5);
+	if (ret != (total_length - 5) )
+		return -1;
+
+	return total_length;
+}
+
+static int open_serial_fd(const char *serial_port)
+{
+
+	struct termios tty;
+	// 打开串口
+	int serial_fd = ::open(serial_port, O_RDONLY | O_NOCTTY);
+	if (serial_fd < 0) {
+		fprintf(stderr, "错误: 无法打开串口 %s: %s\n", serial_port, strerror(errno));
+		return -1;
+	}
+
+	// 配置串口参数
+	if (tcgetattr(serial_fd, &tty) != 0) {
+		fprintf(stderr, "错误: 无法获取串口属性: %s\n", strerror(errno));
+		close(serial_fd);
+		return -1 ;
+	}
+
+	// 设置为原始模式，禁用所有处理
+	cfmakeraw(&tty);
+
+	// 设置波特率为 115200
+	cfsetispeed(&tty, B115200);
+	cfsetospeed(&tty, B115200);
+
+	// 设置串口参数为 8N1 (8数据位, 无校验, 1停止位)
+	tty.c_cflag &= ~CSIZE;        // 清除数据位设置
+	tty.c_cflag |= CS8;           // 8个数据位
+	tty.c_cflag &= ~PARENB;       // 无校验位
+	tty.c_cflag &= ~CSTOPB;       // 1个停止位 (CSTOPB=0 表示1个停止位)
+	tty.c_cflag &= ~CRTSCTS;      // 禁用硬件流控
+	tty.c_cflag |= CREAD | CLOCAL; // 启用接收器，忽略调制解调器控制线
+
+	// 应用设置
+	if (tcsetattr(serial_fd, TCSANOW, &tty) != 0) {
+		fprintf(stderr, "错误: 无法设置串口属性: %s\n", strerror(errno));
+		close(serial_fd);
+		return -1;
+	}
+	return serial_fd;
+}
+
+WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
+	ModuleParams(nullptr),
+	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
+	rotation(static_cast<Rotation>(rotation_value))
+{
+	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
+	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
+
 	wbot_crc32_init_table();
-
-	_px4_gyro.set_scale(math::radians(1.0f)); // parse 的时候已经做过scale 处理了
-	_px4_gyro.set_range(math::radians(1000.f)); // 和单片机里的参数一致
-
-	// Accelerometer configuration 16 G range
-	_px4_accel.set_scale(CONSTANTS_ONE_G); // parse 的时候已经做过scale 处理了
-	_px4_accel.set_range(2.0f * CONSTANTS_ONE_G); // 和单片机里的参数一致
-
 }
 
 WBotMainDriver::~WBotMainDriver()
 {
-}
-
-int WBotMainDriver::init()
-{
-	PX4_INFO("Water Robot Main Driver Initialized!");
-
-	int ret = SPI::init();
-
-	if (ret != PX4_OK) {
-		DEVICE_DEBUG("SPI::init failed (%i)", ret);
-
-		return ret;
-	}
-	DEVICE_DEBUG("SPI::init ok (%i)", ret);
-	DEVICE_DEBUG("spi dev id= %i addr= %i", get_device_id(), get_device_address());
-	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
-	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
-
-	return Reset() ? 0 : -1;
-}
-
-bool WBotMainDriver::Reset()
-{
-
 	ScheduleClear();
-
-	uint32_t interva_delay_us =  10*1000;
-	ScheduleOnInterval(interva_delay_us, interva_delay_us);
-
-	return true;
 }
 
-void WBotMainDriver::RunImpl()
+int WBotMainDriver::Start()
 {
-	// PX4_INFO("Water Robot Main Driver running!");
-	if (should_exit()) {
-		PX4_INFO("Water Robot Main Driver quit!");
-		exit_and_cleanup();
-		return;
+
+	uint32_t ret = list_tty((char**)this->_serial_name);
+	if (ret != WBotMainDriver::TOTAL_SERIAL_COUNT )
+		return PX4_ERROR;
+
+	for (uint32_t n = 0; n < WBotMainDriver::TOTAL_SERIAL_COUNT; n++)
+	{
+		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
+		if ( this->_serial_fd[n] < 0 )
+			return PX4_ERROR;
 	}
 
+	ScheduleOnInterval(2000_us); // 2ms interval
+	return PX4_OK;
+}
+
+void WBotMainDriver::RunForOne(uint32_t dev_id)
+{
 	bool updated;
 	uint32_t cmd_size  = 1;
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
@@ -124,17 +213,16 @@ void WBotMainDriver::RunImpl()
 		// PX4_INFO("dev(%i) Got new data: %i %i",
 		// 	get_device_address(), data.speed[0], data.speed[1]);
 
-		uint32_t board_id = get_device_address();
-
-		for ( int i2c_index = 0; i2c_index<4 && board_id < 2; i2c_index++)
+		for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
 		{
-			uint8_t speed = data.speed[i2c_index + board_id*4];
-			uint8_t direction = data.direction[i2c_index + board_id*4];
+			uint8_t speed = data.speed[i2c_index + dev_id*4];
+			uint8_t direction = data.direction[i2c_index + dev_id*4];
 
 			McuCmdHelper::set_motor_cmd( &send_cache[cmd_size] , speed, direction, i2c_index );
 			cmd_size += 2;
 		}
 	}
+
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
 		struct wbot_ctrl_led_s data;
@@ -170,14 +258,20 @@ void WBotMainDriver::RunImpl()
 	}
 
 	// TODO: add cmd
-	if (PX4_OK != transfer(send_cache, recv_cache, sizeof(recv_cache)) )
-	{
-		PX4_WARN("wbot main spi can't read , spi id=%i", get_device_address());
+	int write_length = ::write(this->_serial_fd[dev_id], send_cache, cmd_size);
+	if ( write_length != (int)cmd_size) {
+		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		return;
+	}
+	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
+	if ( read_length < 0 )
+	{
+		PX4_WARN("wbot main can't read , dev id=%i", dev_id);
+	 	return;
 	}
 
 	_now = hrt_absolute_time();
-	int ret = parse_spi_data(recv_cache);
+	int ret = parse_mcu_data(dev_id, recv_cache);
 
 	switch (ret)
 	{
@@ -194,39 +288,15 @@ void WBotMainDriver::RunImpl()
 		perf_count(_right_perf);
 		break;
 	}
-
-	// if ( ret < 0 )
-	// {
-
-	// 	uint8_t id = get_device_address();
-	// 	//if (id == 1)
-	// 	// {
-	// 		// PX4_INFO("spi %d recv_cache recv bytes: ,ret = %d",id,ret);
-	// 		// for (int i = 0; i < SPI_BUF_SIZE; i++) {
-	// 		// 	if (i % 16 == 0) {
-	// 		// 		PX4_INFO("\n ");  // 换行后显示起始索引
-	// 		// 	}
-	// 		// 	printf("%02x ", recv_cache[i]);
-	// 		// }
-	// 	// }
-
-
-	// }
-
-
-	// get data ok
-
-
-
-
 }
 
-bool WBotMainDriver::parse_spi_motor_data(uint8_t *data, uint32_t moto_index, uint32_t len)
+
+bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len)
 {
 	if  ( len != MOTOR_DATA_SIZE || ( moto_index >= MOTOR_MAX_NUM ) )
 	{
-		DEVICE_DEBUG("parse motor error spi addr=%i motor_index=%i buf_len=%i",
-			get_device_address(), moto_index, len
+		PX4_DEBUG("parse motor error spi addr=%i motor_index=%i buf_len=%i",
+			dev_id, moto_index, len
 			);
 		return false;
 	}
@@ -236,7 +306,108 @@ bool WBotMainDriver::parse_spi_motor_data(uint8_t *data, uint32_t moto_index, ui
 	return true;
 }
 
-bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
+// data: 接收到的 SPI 包
+// 返回值: 0 成功，负数表示错误
+int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
+
+    constexpr uint32_t packet_head_size = 5 ;
+    constexpr uint32_t sensor_data_head_size = 3 ;
+
+    if (!data) return -1; // 缓冲区太小
+
+    // 检查包头
+    if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d ) return -2;
+
+    uint32_t total_len = data[4]; // copy_data 填写的总长度
+    if (total_len < 11 ) return -3; // 长度非法
+
+    // 检查包尾
+    if (data[total_len-6] != 0xa5 || data[total_len-5] != 0xa5) return -4;
+
+    // CRC 校验
+    uint32_t crc_recv = data[total_len-4] | (data[total_len-3]<<8) |
+                        (data[total_len-2]<<16) | (data[total_len-1]<<24);
+    uint32_t crc_calc = wbot_crc32(data, total_len-4);
+
+    if (crc_recv != crc_calc)
+    {
+	// PX4_INFO("crc_recv = 0x%04x ,crc_calc = 0x%04x", crc_recv, crc_calc);
+	return -5;
+    }
+
+    // 解析有效数据
+    uint32_t index = packet_head_size; // 跳过包头 字段
+    while (index + packet_head_size <= total_len - 6) { // skip 包头
+        uint16_t data_len = data[index] | (data[index+1] << 8);
+        uint8_t tag = data[index+2];
+        index += sensor_data_head_size;  // index is the  real data offset now
+
+        if (index + data_len > total_len - 6) {
+		PX4_ERR("index,data_len= %i %i, total_len-6=%i\n", index, data_len, total_len-6);
+		return -6; // 数据越界
+	}
+
+        // 处理数据
+        // PX4_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
+        // for (uint16_t i = 0; i < data_len; i++) {
+        //     PX4_DEBUG(" %02X", data[index + i]);
+        // }
+	// PX4_DEBUG("\n");
+
+	switch (tag)
+	{
+	case WBOT_SDEV_TAG_IMU:
+	{
+		if ( !parse_imu_data( &data[index], data_len) )
+		{
+			PX4_DEBUG("wbot main driver parse imu data error");
+		}
+		break;
+	}
+	case WBOT_SDEV_TAG_MS5837:
+	{
+		if ( !parse_ms5837_data( &data[index], data_len) )
+		{
+			PX4_DEBUG("wbot main driver parse ms5837 data error");
+		}
+		break;
+	}
+	case WBOT_SDEV_TAG_MOTO0:
+		if (!parse_motor_data(dev_id,  &data[index], MOTOR_INDEX_0, data_len))
+		{
+			PX4_DEBUG("motor %d data recv error",MOTOR_INDEX_0);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO1:
+		if (!parse_motor_data(dev_id, &data[index], MOTOR_INDEX_1, data_len))
+		{
+			PX4_DEBUG("motor %d data recv error",MOTOR_INDEX_1);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO2:
+		if (!parse_motor_data(dev_id,  &data[index], MOTOR_INDEX_2, data_len))
+		{
+			PX4_DEBUG("motor %d data recv error ",MOTOR_INDEX_2);
+		}
+		break;
+	case WBOT_SDEV_TAG_MOTO3:
+		if (!parse_motor_data(dev_id, &data[index], MOTOR_INDEX_3, data_len))
+		{
+			PX4_DEBUG("motor %d data recv error",MOTOR_INDEX_3);
+		}
+		break;
+	default:
+		break;
+	}
+
+        index += data_len;
+    }
+
+    return 0; // 成功
+}
+
+
+bool WBotMainDriver::parse_ms5837_data(uint8_t *data, uint32_t len)
 {
 	if ( len != 8 )
 	{
@@ -250,7 +421,7 @@ bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 
 	float temperature_celsius 	= temperature_raw / 100.0;
 	float pressure_mbar   		= pressure_raw / 10.0;
-	WMD_DEBUG("temperature = %f  pressure_mbar = %f \n", (double)temperature_celsius,(double) pressure_mbar);
+	PX4_DEBUG("temperature = %f  pressure_mbar = %f \n", (double)temperature_celsius,(double) pressure_mbar);
 
 	(void)temperature_celsius;
 	(void)pressure_mbar;
@@ -284,7 +455,8 @@ bool WBotMainDriver::parse_spi_ms5837_data(uint8_t *data, uint32_t len)
 	return true;
 }
 
-bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
+
+bool WBotMainDriver::parse_imu_data(uint8_t *data, uint32_t len)
 {
 	uint32_t cnt = len / 7;
 	if ( len % 7 != 0 )
@@ -362,146 +534,85 @@ bool WBotMainDriver::parse_spi_imu_data(uint8_t *data, uint32_t len)
 	return true;
 }
 
-// data: 接收到的 SPI 包
-// 返回值: 0 成功，负数表示错误
-int WBotMainDriver::parse_spi_data(uint8_t *data) {
 
-    constexpr uint32_t packet_head_size = 5 ;
-    constexpr uint32_t sensor_data_head_size = 3 ;
-
-    if (!data) return -1; // 缓冲区太小
-
-    // 检查包头
-    if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d ) return -2;
-
-    uint32_t total_len = data[4]; // copy_data 填写的总长度
-    if (total_len < 11 ) return -3; // 长度非法
-
-    // 检查包尾
-    if (data[total_len-6] != 0xa5 || data[total_len-5] != 0xa5) return -4;
-
-    // CRC 校验
-    uint32_t crc_recv = data[total_len-4] | (data[total_len-3]<<8) |
-                        (data[total_len-2]<<16) | (data[total_len-1]<<24);
-    uint32_t crc_calc = wbot_crc32(data, total_len-4);
-
-    if (crc_recv != crc_calc)
-    {
-	// PX4_INFO("crc_recv = 0x%04x ,crc_calc = 0x%04x", crc_recv, crc_calc);
-	return -5;
-    }
-
-    // 解析有效数据
-    uint32_t index = packet_head_size; // 跳过包头 字段
-    while (index + packet_head_size <= total_len - 6) { // skip 包头
-        uint16_t data_len = data[index] | (data[index+1] << 8);
-        uint8_t tag = data[index+2];
-        index += sensor_data_head_size;  // index is the  real data offset now
-
-        if (index + data_len > total_len - 6) {
-		PX4_ERR("index,data_len= %i %i, total_len-6=%i\n", index, data_len, total_len-6);
-		return -6; // 数据越界
-	}
-
-        // 处理数据
-        // DEVICE_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
-        // for (uint16_t i = 0; i < data_len; i++) {
-        //     DEVICE_DEBUG(" %02X", data[index + i]);
-        // }
-	// DEVICE_DEBUG("\n");
-
-	switch (tag)
-	{
-	case WBOT_SDEV_TAG_IMU:
-	{
-		if ( !parse_spi_imu_data( &data[index], data_len) )
-		{
-			DEVICE_DEBUG("wbot main driver parse imu data error");
-		}
-		break;
-	}
-	case WBOT_SDEV_TAG_MS5837:
-	{
-		if ( !parse_spi_ms5837_data( &data[index], data_len) )
-		{
-			DEVICE_DEBUG("wbot main driver parse ms5837 data error");
-		}
-		break;
-	}
-	case WBOT_SDEV_TAG_MOTO0:
-		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_0, data_len))
-		{
-			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_0);
-		}
-		break;
-	case WBOT_SDEV_TAG_MOTO1:
-		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_1, data_len))
-		{
-			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_1);
-		}
-		break;
-	case WBOT_SDEV_TAG_MOTO2:
-		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_2, data_len))
-		{
-			DEVICE_DEBUG("motor %d data recv error ",MOTOR_INDEX_2);
-		}
-		break;
-	case WBOT_SDEV_TAG_MOTO3:
-		if (!parse_spi_motor_data( &data[index], MOTOR_INDEX_3, data_len))
-		{
-			DEVICE_DEBUG("motor %d data recv error",MOTOR_INDEX_3);
-		}
-		break;
-	default:
-		break;
-	}
-
-        index += data_len;
-    }
-
-    return 0; // 成功
-}
-
-void WBotMainDriver::print_status()
+void WBotMainDriver::Run()
 {
-	PX4_INFO("Water Robot Main Driver status dev_id=%i", get_device_address() );
-	I2CSPIDriverBase::print_status();
+	if (should_exit()) {
+		exit_and_cleanup();
+		return;
+	}
 
-	perf_print_counter(_bad_packhead_perf);
-	perf_print_counter(_bad_packtail_perf);
-	perf_print_counter(_bad_crc_err_perf);
-	perf_print_counter(_right_perf);
-	double bad_count = perf_get_event_count(_bad_packhead_perf) + perf_get_event_count( _bad_packtail_perf) + perf_get_event_count(_bad_crc_err_perf);
-	double all_count = bad_count + perf_get_event_count(_right_perf);
-	PX4_INFO("%f ",bad_count / all_count);
+	for (uint32_t n = 0; n < WBotMainDriver::TOTAL_SERIAL_COUNT; n++)
+	{
+		RunForOne(n);
+	}
 
 }
 
-int WBotMainDriver::probe()
+int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
-	PX4_INFO("probe");
-	//不用探测， 默认存在
+	int n_value = 0;
+	int ch;
+	int myoptind = 1;
+	const char *myoptarg = nullptr;
+
+	while ((ch = px4_getopt(argc, argv, "r:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'r':
+			n_value = atoi(myoptarg);
+			break;
+
+		default:
+			print_usage("unknown option");
+			return -1;
+		}
+	}
+
+	WBotMainDriver *instance = new WBotMainDriver(n_value);
+
+	if (!instance) {
+		PX4_ERR("alloc failed");
+		return -1;
+	}
+
+	_object.store(instance);
+	_task_id = task_id_is_work_queue;
+
+	int ret = instance->Start();
+
+	if (ret != PX4_OK) {
+		delete instance;
+		_object.store(nullptr);
+		_task_id = -1;
+		return ret;
+	}
+
 	return PX4_OK;
 }
 
-void WBotMainDriver::exit_and_cleanup()
+int WBotMainDriver::custom_command(int argc, char *argv[])
 {
-	I2CSPIDriverBase::exit_and_cleanup();
+	return print_usage("unknown command");
 }
-	// if ( ret < 0 )
-	// {
 
-	// 	uint8_t id = get_device_address();
-	// 	// if (id == 1)
-	// 	// {
-	// 		PX4_INFO("spi %d srecv_cache recv bytes: ,ret = %d",id,ret);
-	// 		for (int i = 0; i < SPI_BUF_SIZE; i++) {
-	// 		if (i % 16 == 0) {
-	// 			PX4_INFO("\n ");  // 换行后显示起始索引
-	// 		}
-	// 		printf("%02x ", recv_cache[i]);
-	// 	}
-	// 	// }
+int WBotMainDriver::print_usage(const char *reason)
+{
+	if (reason) {
+		PX4_WARN("%s\n", reason);
+	}
 
+	PRINT_MODULE_DESCRIPTION(
+		R"DESCR_STR(
+### Description
+Water Robot Main Driver module.
 
-	// }
+)DESCR_STR");
+
+	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
+	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotaion N value", true);
+	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
+
+	return 0;
+}
+

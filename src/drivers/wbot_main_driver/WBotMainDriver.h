@@ -39,75 +39,71 @@
 
 #pragma once
 
-#include <drivers/device/spi.h>
-#include <px4_platform_common/i2c_spi_buses.h>
-#include <px4_platform_common/px4_config.h>
-#include <px4_platform_common/defines.h>
-#include <px4_platform_common/getopt.h>
+#include <stdint.h>
+
+
+#include <px4_platform_common/module.h>
+#include <px4_platform_common/module_params.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
-#include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
-#include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
-#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+#include <lib/conversion/rotation.h>
+
 
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
 
 
-class WBotMainDriver : public ::device::SPI, public I2CSPIDriver<WBotMainDriver>
+class WBotMainDriver : public ModuleBase<WBotMainDriver>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-	WBotMainDriver(const I2CSPIDriverConfig &config);
+	WBotMainDriver(uint8_t rotation_value);
 	~WBotMainDriver() override;
 
-	static void print_usage();
+	/** @see ModuleBase */
+	static int task_spawn(int argc, char *argv[]);
 
-	int init() override;
+	/** @see ModuleBase */
+	static int custom_command(int argc, char *argv[]);
+
+	/** @see ModuleBase */
+	static int print_usage(const char *reason = nullptr);
+
+	int Start();
 
 
-	void print_status() override;
-
-	void RunImpl() ;
-
-
+	static constexpr uint32_t TOTAL_SERIAL_COUNT = 2;
 
 private:
-	PX4Accelerometer _px4_accel;
-	PX4Gyroscope _px4_gyro;
-	PX4Magnetometer _px4_mag;
-
 	orb_advert_t _water_press_pub = nullptr;
 	orb_advert_t _water_temp_pub = nullptr;
 
+	void Run() override;
 
-	hrt_abstime _now = hrt_absolute_time();
 
-	static const int  SPI_BUF_SIZE = 256;
-	uint8_t send_cache[SPI_BUF_SIZE];
-	uint8_t recv_cache[SPI_BUF_SIZE];
-	uint32_t test_cnt = 0;
+	void RunForOne(uint32_t serial_id);
+	int parse_mcu_data(uint8_t dev_id, uint8_t *data);
+	bool parse_imu_data(uint8_t *data, uint32_t len);
+	bool parse_ms5837_data(uint8_t *data, uint32_t len);
+	bool parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len);
+
+	Rotation rotation{Rotation::ROTATION_NONE};
+
+
+	int _serial_fd[TOTAL_SERIAL_COUNT] = {-1, -1};
+	char _serial_name[TOTAL_SERIAL_COUNT][4096] = { "", "" };
+
+	static const int  CMD_BUF_SIZE = 256;
+	uint8_t send_cache[CMD_BUF_SIZE];
+	uint8_t recv_cache[CMD_BUF_SIZE];
 
 	int _wbot_moto_sub = -1;
 	int _wbot_led_sub = -1;
+
+	hrt_abstime _now = hrt_absolute_time();
 
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
 	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
 	perf_counter_t _right_perf{perf_alloc(PC_COUNT, MODULE_NAME": all_right")};
 
-
-
-	int parse_spi_data(uint8_t *data);
-
-	bool parse_spi_imu_data(uint8_t *data, uint32_t len);
-
-	bool parse_spi_ms5837_data(uint8_t *data, uint32_t len);
-
-	bool parse_spi_motor_data(uint8_t *data, uint32_t moto_index, uint32_t len);
-
-
-	void exit_and_cleanup() override;
-	int probe() override;
-
-	bool Reset();
 };
