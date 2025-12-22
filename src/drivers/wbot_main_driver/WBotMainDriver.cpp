@@ -52,8 +52,16 @@ using namespace time_literals;
 /*
 查找所有的 usb 串口设备
 */
-static uint32_t list_tty(char *serial_name[2])
+
+#if 1
+static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
+
+	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.1";
+
+	serial_name[0][0] = serial_name[1][0] = '\0';
+
 	const char *pattern = "/sys/class/tty/ttyACM*";
 	glob_t g;
 	uint32_t i = 0;
@@ -78,17 +86,23 @@ static uint32_t list_tty(char *serial_name[2])
 			strncpy(realdev, "(unresolved)", sizeof(realdev));
 		} else {
 			// like : /sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1:1.0/ttyACM0/tty/ttyACM0
-			strcpy(serial_name[i], devnode);
+			if ( 0 == strncmp(realdev, dev0, strlen(dev0))) {
+				strcpy(serial_name[0], devnode);
+				ret++;
+			}
+			else
+			if ( 0 == strncmp(realdev, dev1, strlen(dev1))) {
+				strcpy(serial_name[1], devnode);
+				ret++;
+			}
 			printf("  sysfs    : %s\n\n", realdev);
-			ret++;
 		}
-
-
 	}
 
 	globfree(&g);
 	return ret;
 }
+#endif
 
 static int read_full_packet(int serial_fd, uint8_t *data)
 {
@@ -105,23 +119,33 @@ static int read_full_packet(int serial_fd, uint8_t *data)
 		}
 	}
 	if ( n == 128 )
-		return -1;
+		return -2;
 
 	ret = ::read(serial_fd, data+1, 3 );
 	if ( ret != 3 )
-		return -1;
+		return -3;
 
 	if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d )
-		return -1;
+		return -4;
 
 	ret = ::read(serial_fd, data+4, 1 );
 	if ( ret != 1 )
-		return -1;
+		return -5;
 	uint8_t total_length = data[4];
 
-	ret = ::read(serial_fd, data+5, total_length-5);
-	if (ret != (total_length - 5) )
-		return -1;
+	uint8_t left_length = total_length - 5 ;
+	do {
+		ret = ::read(serial_fd, data + total_length - left_length, left_length);
+		if ( ret < 0 )
+		{
+			return -6 ;
+		}
+		if ( ret == 0 )
+		{
+			break;
+		}
+		left_length -= ret;
+	} while ( left_length > 0 );
 
 	return total_length;
 }
@@ -131,7 +155,7 @@ static int open_serial_fd(const char *serial_port)
 
 	struct termios tty;
 	// 打开串口
-	int serial_fd = ::open(serial_port, O_RDONLY | O_NOCTTY);
+	int serial_fd = ::open(serial_port, O_RDWR | O_NOCTTY);
 	if (serial_fd < 0) {
 		fprintf(stderr, "错误: 无法打开串口 %s: %s\n", serial_port, strerror(errno));
 		return -1;
@@ -186,26 +210,34 @@ WBotMainDriver::~WBotMainDriver()
 
 int WBotMainDriver::Start()
 {
+	uint32_t ret = list_tty(this->_serial_name);
 
-	uint32_t ret = list_tty((char**)this->_serial_name);
-	if (ret != WBotMainDriver::TOTAL_SERIAL_COUNT )
-		return PX4_ERROR;
-
-	for (uint32_t n = 0; n < WBotMainDriver::TOTAL_SERIAL_COUNT; n++)
+	PX4_INFO("list tty ret=%d\n",ret);
+	this->_serial_fd[0] = -1;
+	this->_serial_fd[1] = -1;
+	for (uint32_t n = 0; n < ret; n++)
 	{
+
 		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
 		if ( this->_serial_fd[n] < 0 )
-			return PX4_ERROR;
+		{
+
+		}
+		else
+			PX4_INFO("start serial=%s\n", this->_serial_name[n]);
 	}
 
-	ScheduleOnInterval(2000_us); // 2ms interval
+	ScheduleOnInterval(5000_us); // 2ms interval
 	return PX4_OK;
 }
 
 void WBotMainDriver::RunForOne(uint32_t dev_id)
 {
+	if ( this->_serial_fd[dev_id] < 0)
+		return;
+
 	bool updated;
-	uint32_t cmd_size  = 1;
+	uint32_t cmd_size  = 3; // 3字节对应 ： 2字节包头 + 1字节长度
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
 		struct wbot_ctrl_moto_s data;
@@ -241,7 +273,9 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 	}
 	if ( cmd_size > 1 )
 	{
-		send_cache[0] = cmd_size;
+		send_cache[0] = 0x5a;
+		send_cache[1] = 0x5b;
+		send_cache[2] = cmd_size;
 		uint32_t crc_calc = wbot_crc32(send_cache, cmd_size);
 
 		// printf("crc (%d)= \n", get_device_address() );
@@ -264,14 +298,25 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		return;
 	}
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
-	if ( read_length < 0 )
+	if ( read_length <= 0 )
 	{
-		PX4_WARN("wbot main can't read , dev id=%i", dev_id);
+		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
 	 	return;
+	} else {
+		printf("read data from mcu:\n");
+		for (int n = 0; n < read_length; n++)
+		{
+			printf(" 0x%02x, ", recv_cache[n]);
+			if ( (n+1) % 16 == 0 ) {
+				printf("\n");
+			}
+		}
+		printf("\n");
 	}
 
 	_now = hrt_absolute_time();
 	int ret = parse_mcu_data(dev_id, recv_cache);
+	PX4_INFO("parse_mcu_data: %d\n",ret);
 
 	switch (ret)
 	{
@@ -358,7 +403,7 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 	{
 	case WBOT_SDEV_TAG_IMU:
 	{
-		if ( !parse_imu_data( &data[index], data_len) )
+		if ( !parse_imu_data(dev_id, &data[index], data_len) )
 		{
 			PX4_DEBUG("wbot main driver parse imu data error");
 		}
@@ -366,7 +411,7 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 	}
 	case WBOT_SDEV_TAG_MS5837:
 	{
-		if ( !parse_ms5837_data( &data[index], data_len) )
+		if ( !parse_ms5837_data(dev_id, &data[index], data_len) )
 		{
 			PX4_DEBUG("wbot main driver parse ms5837 data error");
 		}
@@ -407,8 +452,9 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 }
 
 
-bool WBotMainDriver::parse_ms5837_data(uint8_t *data, uint32_t len)
+bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 {
+	// TODO 根据 dev id 发送到不同的 topic
 	if ( len != 8 )
 	{
 		PX4_INFO("ms5837_data ! = 8,len =  %d ",len);
@@ -456,7 +502,7 @@ bool WBotMainDriver::parse_ms5837_data(uint8_t *data, uint32_t len)
 }
 
 
-bool WBotMainDriver::parse_imu_data(uint8_t *data, uint32_t len)
+bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 {
 	uint32_t cnt = len / 7;
 	if ( len % 7 != 0 )
@@ -542,9 +588,9 @@ void WBotMainDriver::Run()
 		return;
 	}
 
-	for (uint32_t n = 0; n < WBotMainDriver::TOTAL_SERIAL_COUNT; n++)
+	for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
 	{
-		RunForOne(n);
+		RunForOne(dev_id);
 	}
 
 }

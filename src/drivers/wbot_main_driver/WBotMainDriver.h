@@ -79,18 +79,19 @@ private:
 
 	void Run() override;
 
+	// 针对一个 usb 串口执行操作
+	void RunForOne(uint32_t dev_id);
 
-	void RunForOne(uint32_t serial_id);
 	int parse_mcu_data(uint8_t dev_id, uint8_t *data);
-	bool parse_imu_data(uint8_t *data, uint32_t len);
-	bool parse_ms5837_data(uint8_t *data, uint32_t len);
+	bool parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len);
+	bool parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t len);
 	bool parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len);
 
 	Rotation rotation{Rotation::ROTATION_NONE};
 
 
 	int _serial_fd[TOTAL_SERIAL_COUNT] = {-1, -1};
-	char _serial_name[TOTAL_SERIAL_COUNT][4096] = { "", "" };
+	char _serial_name[TOTAL_SERIAL_COUNT][4096];
 
 	static const int  CMD_BUF_SIZE = 256;
 	uint8_t send_cache[CMD_BUF_SIZE];
