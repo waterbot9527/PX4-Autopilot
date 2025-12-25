@@ -4,6 +4,7 @@ enum MCU_CMD_TYPE {
 	// 和单片机里 对应
 	MCU_CMD_TYPE_STOP_MOTO = 1,
 	MCU_CMD_TYPE_START_MOTO = 2 ,
+	MCU_CMD_TYPE_UPDATE = 3,//not used
 	MCU_CMD_TYPE_REBOOT = 4 ,
 	MCU_CMD_TYPE_SET_LED = 6,
 };
@@ -43,20 +44,23 @@ public :
 		return true;
 	}
 
+	static bool set_update_value(uint8_t *cmd, uint8_t value)
+	{
+		cmd[0] = MCU_CMD_TYPE_UPDATE;
+		return true;
+	}
+
+	static bool set_reboot_value(uint8_t *cmd, uint8_t value )
+	{
+		cmd[0] = MCU_CMD_TYPE_REBOOT;
+		return true;
+	}
+
 	static bool set_led_value(uint8_t *cmd, uint8_t value)
 	{
 		cmd[0] = MCU_CMD_TYPE_SET_LED;
 		cmd[1] = value;
 		return true;
 	}
-
-
-	static bool set_reboot_value(uint8_t *cmd, uint8_t value )
-	{
-		cmd[0] = MCU_CMD_TYPE_REBOOT;
-		cmd[1] = value;
-		return true;
-	}
-
 
 };

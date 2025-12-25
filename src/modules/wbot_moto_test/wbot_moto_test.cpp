@@ -88,7 +88,7 @@ int wbot_moto_test_main(int argc, char *argv[])
         if (led_pub != nullptr) {
             PX4_INFO("Published wbot_led message to cmd1 %d", cmd1);
         } else {
-            PX4_ERR("Failed to publish wbot_led message");
+            PX4_ERR("Failed to publish wbot_led messagsrc/modules/e");
         }
 #endif
 

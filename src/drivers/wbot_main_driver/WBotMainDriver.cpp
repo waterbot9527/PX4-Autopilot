@@ -57,8 +57,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.1";
+	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -155,7 +155,7 @@ static int open_serial_fd(const char *serial_port)
 
 	struct termios tty;
 	// 打开串口
-	int serial_fd = ::open(serial_port, O_RDWR | O_NOCTTY);
+	int serial_fd = ::open(serial_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
 	if (serial_fd < 0) {
 		fprintf(stderr, "错误: 无法打开串口 %s: %s\n", serial_port, strerror(errno));
 		return -1;
@@ -224,7 +224,7 @@ int WBotMainDriver::Start()
 
 		}
 		else
-			PX4_INFO("start serial=%s\n", this->_serial_name[n]);
+		PX4_INFO("start serial=%s\n", this->_serial_name[n]);
 	}
 
 	ScheduleOnInterval(5000_us); // 2ms interval
@@ -235,15 +235,16 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 {
 	if ( this->_serial_fd[dev_id] < 0)
 		return;
-
+	// PX4_INFO("wbot_main_driver dev-id=%d RunForOne running\n",dev_id);
 	bool updated;
 	uint32_t cmd_size  = 3; // 3字节对应 ： 2字节包头 + 1字节长度
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
+		PX4_INFO("MOTOR Control update\n");
 		struct wbot_ctrl_moto_s data;
 		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
-		// PX4_INFO("dev(%i) Got new data: %i %i",
-		// 	get_device_address(), data.speed[0], data.speed[1]);
+		PX4_INFO("dev(%d) Got new data: %i %i",
+			dev_id, data.speed[0], data.speed[1]);
 
 		for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
 		{
@@ -257,17 +258,19 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
+		PX4_INFO("LED Control update\n");
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
-		// if ( data.led_id == 0 )
-		// {
-		// 	McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
-		// 	PX4_INFO("light_value = %d",data.light_value);
-		// 	cmd_size += 2;
-		// }
+		if ( data.led_id == 0 )
+		{
+			McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
+			PX4_INFO("set LED ,light_value = %d\n",data.light_value);
+			cmd_size += 2;
+		}
 		if ( data.led_id == 1 )
 		{
 			McuCmdHelper::set_reboot_value( &send_cache[cmd_size] , data.light_value );
+			PX4_INFO("reboot MCU\n");
 			cmd_size += 2;
 		}
 	}
@@ -294,7 +297,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 	// TODO: add cmd
 	int write_length = ::write(this->_serial_fd[dev_id], send_cache, cmd_size);
 	if ( write_length != (int)cmd_size) {
-		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
+		// PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		return;
 	}
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
@@ -303,20 +306,20 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
 	 	return;
 	} else {
-		printf("read data from mcu:\n");
-		for (int n = 0; n < read_length; n++)
-		{
-			printf(" 0x%02x, ", recv_cache[n]);
-			if ( (n+1) % 16 == 0 ) {
-				printf("\n");
-			}
-		}
-		printf("\n");
+		// printf("read data from %d mcu:\n",dev_id);
+		// for (int n = 0; n < read_length; n++)
+		// {
+		// 	printf(" 0x%02x, ", recv_cache[n]);
+		// 	if ( (n+1) % 16 == 0 ) {
+		// 		printf("\n");
+		// 	}
+		// }
+		// printf("\n");
 	}
 
 	_now = hrt_absolute_time();
 	int ret = parse_mcu_data(dev_id, recv_cache);
-	PX4_INFO("parse_mcu_data: %d\n",ret);
+	// PX4_INFO("parse_mcu_data: %d\n",ret);
 
 	switch (ret)
 	{
@@ -393,11 +396,11 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 	}
 
         // 处理数据
-        // PX4_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
-        // for (uint16_t i = 0; i < data_len; i++) {
-        //     PX4_DEBUG(" %02X", data[index + i]);
-        // }
-	// PX4_DEBUG("\n");
+        PX4_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
+        for (uint16_t i = 0; i < data_len; i++) {
+            PX4_DEBUG(" %02X", data[index + i]);
+        }
+	PX4_DEBUG("\n");
 
 	switch (tag)
 	{
@@ -559,8 +562,7 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			lis2mdl_from_lsb_to_mgauss(*datax);
 			lis2mdl_from_lsb_to_mgauss(*datay);
 			lis2mdl_from_lsb_to_mgauss(*dataz);
-
-			// WMD_DEBUG("guass x,y,z=%f %f %f\n",
+			// PX4_INFO("guass x,y,z=%f %f %f\n",
 			// 	(double)lis2mdl_from_lsb_to_mgauss(*datax),
 			// 	(double)lis2mdl_from_lsb_to_mgauss(*datay),
 			// 	(double)lis2mdl_from_lsb_to_mgauss(*dataz)
@@ -591,8 +593,8 @@ void WBotMainDriver::Run()
 	for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
 	{
 		RunForOne(dev_id);
+		// PX4_INFO("wbot_main_driver running\n");
 	}
-
 }
 
 int WBotMainDriver::task_spawn(int argc, char *argv[])
@@ -656,7 +658,7 @@ Water Robot Main Driver module.
 
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotaion N value", true);
+	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
