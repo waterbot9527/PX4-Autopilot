@@ -57,8 +57,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
+	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -104,40 +104,69 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 }
 #endif
 
+static int read_nonblock(int fd, uint8_t *data, int size)
+{
+	int already_read = 0;
+	int ret = 0;
+	for(int n = 0; n < 256 && already_read < size ; n++)
+	{
+		ret = ::read(fd, data + already_read, size-already_read);
+		if (ret <= 0 )
+		{
+			if (errno == EAGAIN)
+				continue;
+			else
+				return ret;
+		}
+
+		already_read += ret;
+	}
+	if ( already_read == 0)
+		already_read = ret;
+
+	return already_read;
+}
+
 static int read_full_packet(int serial_fd, uint8_t *data)
 {
 	int ret;
-	int n = 0;
-	for(n = 0; n < 128; n++)
+	int n;
+
+	for (n = 0; n < 128;n++)
 	{
-		ret = ::read(serial_fd, data, 1);
+		ret = read_nonblock(serial_fd, data, 1);
 		if ( ret != 1 )
 			return -1;
 
 		if (data[0] == 0x5a) {
-			break;
+		 	break;
 		}
 	}
 	if ( n == 128 )
 		return -2;
 
-	ret = ::read(serial_fd, data+1, 3 );
+
+	ret = read_nonblock(serial_fd, data+1, 3 );
 	if ( ret != 3 )
 		return -3;
 
 	if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d )
+	{
+		printf("fuck1 = %x %x %x %x \n", data[0], data[1], data[2], data[3]);
 		return -4;
+	}
 
-	ret = ::read(serial_fd, data+4, 1 );
+	ret = read_nonblock(serial_fd, data+4, 1 );
 	if ( ret != 1 )
 		return -5;
 	uint8_t total_length = data[4];
 
 	uint8_t left_length = total_length - 5 ;
 	do {
-		ret = ::read(serial_fd, data + total_length - left_length, left_length);
+		ret = read_nonblock(serial_fd, data + total_length - left_length, left_length);
 		if ( ret < 0 )
 		{
+			printf("errno=%d, ret=%d left_length=%d, total_length=%d\n", errno, ret, left_length, total_length);
 			return -6 ;
 		}
 		if ( ret == 0 )
@@ -155,7 +184,7 @@ static int open_serial_fd(const char *serial_port)
 
 	struct termios tty;
 	// 打开串口
-	int serial_fd = ::open(serial_port, O_RDWR | O_NOCTTY | O_NONBLOCK);
+	int serial_fd = ::open(serial_port, O_RDWR | O_NOCTTY | O_NONBLOCK );
 	if (serial_fd < 0) {
 		fprintf(stderr, "错误: 无法打开串口 %s: %s\n", serial_port, strerror(errno));
 		return -1;
@@ -243,15 +272,15 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		PX4_INFO("MOTOR Control update\n");
 		struct wbot_ctrl_moto_s data;
 		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
-		PX4_INFO("dev(%d) Got new data: %i %i",
-			dev_id, data.speed[0], data.speed[1]);
+		// PX4_INFO("dev(%d) Got new data: %i %i %i %i %i %i %i %i",
+		// 	dev_id, data.speed[0], data.speed[1],data.speed[2],data.speed[3],data.speed[4],data.speed[5],data.speed[6],data.speed[7]);
 
 		for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
 		{
 			uint8_t speed = data.speed[i2c_index + dev_id*4];
 			uint8_t direction = data.direction[i2c_index + dev_id*4];
 
-			McuCmdHelper::set_motor_cmd( &send_cache[cmd_size] , speed, direction, i2c_index );
+			McuCmdHelper::set_motor_cmd( &send_cache[cmd_size] , speed, direction, i2c_index);
 			cmd_size += 2;
 		}
 	}
@@ -296,8 +325,17 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 
 	// TODO: add cmd
 	int write_length = ::write(this->_serial_fd[dev_id], send_cache, cmd_size);
+	// printf("dev = %d writting, write_length = %d ",dev_id,write_length);
+	// for (int n = 0; n < write_length; n++)
+	// {
+	// 	printf(" 0x%02x, ", send_cache[n]);
+	// 	if ( (n+1) % 16 == 0 ) {
+	// 		printf("\n");
+	// 	}
+	// }
+	// printf("\n");
 	if ( write_length != (int)cmd_size) {
-		// PX4_WARN("wbot main can't write , dev id=%i", dev_id);
+		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		return;
 	}
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
@@ -306,7 +344,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
 	 	return;
 	} else {
-		// printf("read data from %d mcu:\n",dev_id);
+		//printf("read data from %d mcu:\n",dev_id);
 		// for (int n = 0; n < read_length; n++)
 		// {
 		// 	printf(" 0x%02x, ", recv_cache[n]);
@@ -319,7 +357,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 
 	_now = hrt_absolute_time();
 	int ret = parse_mcu_data(dev_id, recv_cache);
-	// PX4_INFO("parse_mcu_data: %d\n",ret);
+	//PX4_INFO("parse_mcu_data: %d\n",ret);
 
 	switch (ret)
 	{

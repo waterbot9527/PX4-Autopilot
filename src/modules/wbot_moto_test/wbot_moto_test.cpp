@@ -7,8 +7,8 @@
 
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 //#include <px4_platform_common/px4_log.h>
-// #define  MOTO_TEST
-#define  LED_TEST
+#define  MOTO_TEST
+// #define  LED_TEST
 extern "C" __EXPORT int wbot_moto_test_main(int argc, char *argv[]);
 
 int wbot_moto_test_main(int argc, char *argv[])
@@ -62,7 +62,7 @@ int wbot_moto_test_main(int argc, char *argv[])
         // 设置电机速度（根据需要调整）
         for (int n = 0; n < 8; n++) {
             moto_msg.speed[n] = 60;
-            moto_msg.cmd2[n] = cmd2;
+            moto_msg.direction[n] = cmd2;
         }
         moto_msg.timestamp = hrt_absolute_time();
 
