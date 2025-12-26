@@ -80,7 +80,9 @@ private:
 	void Run() override;
 
 	// 针对一个 usb 串口执行操作
-	void RunForOne(uint32_t dev_id);
+	void RunForOne(uint32_t dev_id, uint32_t cmd_size);
+
+	uint32_t check_update(void);
 
 	int parse_mcu_data(uint8_t dev_id, uint8_t *data);
 	bool parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len);
@@ -94,7 +96,7 @@ private:
 	char _serial_name[TOTAL_SERIAL_COUNT][4096];
 
 	static const int  CMD_BUF_SIZE = 256;
-	uint8_t send_cache[CMD_BUF_SIZE];
+	uint8_t send_cache[2][CMD_BUF_SIZE];
 	uint8_t recv_cache[CMD_BUF_SIZE];
 
 	int _wbot_moto_sub = -1;

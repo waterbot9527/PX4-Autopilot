@@ -260,12 +260,11 @@ int WBotMainDriver::Start()
 	return PX4_OK;
 }
 
-void WBotMainDriver::RunForOne(uint32_t dev_id)
+uint32_t WBotMainDriver::check_update(void)
 {
-	if ( this->_serial_fd[dev_id] < 0)
-		return;
-	// PX4_INFO("wbot_main_driver dev-id=%d RunForOne running\n",dev_id);
+// PX4_INFO("wbot_main_driver dev-id=%d RunForOne running\n",dev_id);
 	bool updated;
+	uint32_t dev_id;
 	uint32_t cmd_size  = 3; // 3字节对应 ： 2字节包头 + 1字节长度
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
@@ -275,14 +274,15 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		// PX4_INFO("dev(%d) Got new data: %i %i %i %i %i %i %i %i",
 		// 	dev_id, data.speed[0], data.speed[1],data.speed[2],data.speed[3],data.speed[4],data.speed[5],data.speed[6],data.speed[7]);
 
-		for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
-		{
-			uint8_t speed = data.speed[i2c_index + dev_id*4];
-			uint8_t direction = data.direction[i2c_index + dev_id*4];
+		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
+			for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
+			{
+				uint8_t speed = data.speed[i2c_index + dev_id*4];
+				uint8_t direction = data.direction[i2c_index + dev_id*4];
 
-			McuCmdHelper::set_motor_cmd( &send_cache[cmd_size] , speed, direction, i2c_index);
-			cmd_size += 2;
-		}
+				McuCmdHelper::set_motor_cmd( &send_cache[dev_id][cmd_size] , speed, direction, i2c_index);
+				cmd_size += 2;
+			}
 	}
 
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
@@ -290,25 +290,34 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		PX4_INFO("LED Control update\n");
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
-		if ( data.led_id == 0 )
+		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
 		{
-			McuCmdHelper::set_led_value( &send_cache[cmd_size] , data.light_value );
-			PX4_INFO("set LED ,light_value = %d\n",data.light_value);
-			cmd_size += 2;
+			if ( data.led_id == 0 )
+			{
+				McuCmdHelper::set_led_value( &send_cache[dev_id][cmd_size] , data.light_value );
+				PX4_INFO("set LED ,light_value = %d\n",data.light_value);
+				cmd_size += 2;
+			}
+			if ( data.led_id == 1 )
+			{
+				McuCmdHelper::set_reboot_value( &send_cache[dev_id][cmd_size] , data.light_value );
+				PX4_INFO("reboot MCU\n");
+				cmd_size += 2;
+			}
+
 		}
-		if ( data.led_id == 1 )
-		{
-			McuCmdHelper::set_reboot_value( &send_cache[cmd_size] , data.light_value );
-			PX4_INFO("reboot MCU\n");
-			cmd_size += 2;
-		}
+
 	}
 	if ( cmd_size > 1 )
 	{
-		send_cache[0] = 0x5a;
-		send_cache[1] = 0x5b;
-		send_cache[2] = cmd_size;
-		uint32_t crc_calc = wbot_crc32(send_cache, cmd_size);
+		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
+		{
+			send_cache[dev_id][0] = 0x5a;
+			send_cache[dev_id][1] = 0x5b;
+			send_cache[dev_id][2] = cmd_size;
+			uint32_t crc_calc = wbot_crc32(send_cache[dev_id], cmd_size);
+			memcpy( &send_cache[dev_id][cmd_size], &crc_calc, sizeof(uint32_t));
+		}
 
 		// printf("crc (%d)= \n", get_device_address() );
 		// for(uint32_t n = 0; n < cmd_size; n++)
@@ -317,14 +326,23 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		// }
 		// printf("\ncrc = %x\n", crc_calc);
 
-		memcpy( &send_cache[cmd_size], &crc_calc, sizeof(uint32_t));
+
 		cmd_size += sizeof(uint32_t);
 	} else {
-		send_cache[0] = 0;
+		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
+			send_cache[dev_id][0] = 0;
 	}
+	return cmd_size;
+
+}
+
+void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
+{
+	if ( this->_serial_fd[dev_id] < 0)
+		return;
 
 	// TODO: add cmd
-	int write_length = ::write(this->_serial_fd[dev_id], send_cache, cmd_size);
+	int write_length = ::write(this->_serial_fd[dev_id], send_cache[dev_id], cmd_size);
 	// printf("dev = %d writting, write_length = %d ",dev_id,write_length);
 	// for (int n = 0; n < write_length; n++)
 	// {
@@ -338,6 +356,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id)
 		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		return;
 	}
+
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
 	if ( read_length <= 0 )
 	{
@@ -628,9 +647,11 @@ void WBotMainDriver::Run()
 		return;
 	}
 
+	uint32_t cmd_size = check_update();
+
 	for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
 	{
-		RunForOne(dev_id);
+		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
 	}
 }
