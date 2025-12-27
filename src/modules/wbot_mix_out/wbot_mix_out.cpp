@@ -1,7 +1,7 @@
 
 #include "wbot_mix_out.hpp"
 #include <cstdlib>
-
+#define MOTOR_TEST
 
 using namespace time_literals;
 
@@ -142,6 +142,19 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	意思是 摇杆1 在X轴上 左移动读出来的数据 是  0.56 时， 转换成电机的数据是
 	[ 0*255*0.56, 0.2*255*0.56 .... ]
 	*/
+
+#ifdef MOTOR_TEST
+	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
+		{ -1.0, +0.0, +0.0, -0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
+		{ +0.0, -1.0, -0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+		{ +0.0, +0.0, +1.0, +0.0, -0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-Y-U */
+		{ +0.0, +0.0, -0.0, -1.0, +0.0, +0.0, +0.0, -0.0 }, /* 摇杆1-Y-D */
+		{ +0.0, +0.0, -0.0, +0.0, +1.0, +0.0, +0.0, +0.0 }, /* 摇杆2-X-U */
+		{ -0.0, +0.0, +0.0, -0.0, +0.0, +1.0, -0.0, -0.0 }, /* 摇杆2-X-D */
+		{ +0.0, -0.0, +0.0, +0.0, +0.0, +0.0, -1.0, +0.0 }, /* 摇杆2-Y-L */
+		{ +0.0, +0.0, +0.0, +0.0, -0.0, -0.0, +0.0, +1.0 }  /* 摇杆2-Y-R */
+	};
+#else
 	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
 		{ -1.0, +0.0, +0.0, -0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
 		{ +1.0, -0.0, -0.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
@@ -152,6 +165,8 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		{ +0.0, -1.0, +0.0, +0.0, +0.0, +1.0, -1.0, +0.0 }, /* 摇杆2-Y-L */
 		{ +0.0, +1.0, +0.0, +0.0, -0.0, -1.0, +1.0, +0.0 }  /* 摇杆2-Y-R */
 	};
+#endif // MOTOR_TEST
+
 
 	//only for debug
 	// for ( int n = 0; n < MAX_ACTUATORS; n++)
@@ -211,7 +226,9 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 
         _moto_msg.timestamp = hrt_absolute_time();
         if (_moto_pub != nullptr) {  // 检查发布者是否有效
-        orb_publish(ORB_ID(wbot_ctrl_moto), _moto_pub, &_moto_msg);
+		orb_publish(ORB_ID(wbot_ctrl_moto), _moto_pub, &_moto_msg);
+		// PX4_INFO("mix publish data: %i %i %i %i %i %i %i %i",
+		// _moto_msg.speed[0], _moto_msg.speed[1],_moto_msg.speed[2],_moto_msg.speed[3],_moto_msg.speed[4],_moto_msg.speed[5],_moto_msg.speed[6],_moto_msg.speed[7]);
 	} else {
 		PX4_ERR("Failed to publish wbot_ctrl_moto: publisher not inited");
 	}

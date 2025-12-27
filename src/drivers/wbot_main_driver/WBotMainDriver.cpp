@@ -58,7 +58,7 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
 	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.3/1-1.3.3.4/1-1.3.3.4:1.0";
+	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.3/1-1.3.3.4/1-1.3.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -85,7 +85,6 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 		if (realpath(path, realdev) == NULL) {
 			strncpy(realdev, "(unresolved)", sizeof(realdev));
 		} else {
-			// like : /sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1:1.0/ttyACM0/tty/ttyACM0
 			if ( 0 == strncmp(realdev, dev0, strlen(dev0))) {
 				strcpy(serial_name[0], devnode);
 				ret++;
@@ -265,24 +264,26 @@ uint32_t WBotMainDriver::check_update(void)
 // PX4_INFO("wbot_main_driver dev-id=%d RunForOne running\n",dev_id);
 	bool updated;
 	uint32_t dev_id;
-	uint32_t cmd_size  = 3; // 3字节对应 ： 2字节包头 + 1字节长度
+	uint32_t cmd_size=3; // 3字节对应 ： 2字节包头 + 1字节长度
 	orb_check(_wbot_moto_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
-		PX4_INFO("MOTOR Control update\n");
+		// PX4_INFO("MOTOR Control update\n");
 		struct wbot_ctrl_moto_s data;
 		orb_copy(ORB_ID(wbot_ctrl_moto), _wbot_moto_sub, &data);
-		// PX4_INFO("dev(%d) Got new data: %i %i %i %i %i %i %i %i",
-		// 	dev_id, data.speed[0], data.speed[1],data.speed[2],data.speed[3],data.speed[4],data.speed[5],data.speed[6],data.speed[7]);
-
+		// PX4_INFO("dev Got new data: %i %i %i %i %i %i %i %i",
+		// 	data.speed[0], data.speed[1],data.speed[2],data.speed[3],data.speed[4],data.speed[5],data.speed[6],data.speed[7]);
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
-			for ( int i2c_index = 0; i2c_index<4 && dev_id < 2; i2c_index++)
+		{
+			for ( int i2c_index = 0; i2c_index<4 ; i2c_index++)
 			{
 				uint8_t speed = data.speed[i2c_index + dev_id*4];
 				uint8_t direction = data.direction[i2c_index + dev_id*4];
 
-				McuCmdHelper::set_motor_cmd( &send_cache[dev_id][cmd_size] , speed, direction, i2c_index);
-				cmd_size += 2;
+				McuCmdHelper::set_motor_cmd( &send_cache[dev_id][cmd_size + i2c_index*2] , speed, direction, i2c_index);
+				// printf("dev_id = %d,speed =%d ,i2c_index=%d\n",dev_id,speed,i2c_index);
 			}
+		}
+		cmd_size += 2*4;
 	}
 
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
@@ -296,19 +297,18 @@ uint32_t WBotMainDriver::check_update(void)
 			{
 				McuCmdHelper::set_led_value( &send_cache[dev_id][cmd_size] , data.light_value );
 				PX4_INFO("set LED ,light_value = %d\n",data.light_value);
-				cmd_size += 2;
 			}
 			if ( data.led_id == 1 )
 			{
 				McuCmdHelper::set_reboot_value( &send_cache[dev_id][cmd_size] , data.light_value );
 				PX4_INFO("reboot MCU\n");
-				cmd_size += 2;
 			}
 
 		}
+		cmd_size += 2;
 
 	}
-	if ( cmd_size > 1 )
+	if ( cmd_size > 3 )
 	{
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
 		{
@@ -317,14 +317,13 @@ uint32_t WBotMainDriver::check_update(void)
 			send_cache[dev_id][2] = cmd_size;
 			uint32_t crc_calc = wbot_crc32(send_cache[dev_id], cmd_size);
 			memcpy( &send_cache[dev_id][cmd_size], &crc_calc, sizeof(uint32_t));
+			// printf("dev_id (%d)= \n", dev_id );
+			// for(uint32_t n = 0; n < cmd_size; n++)
+			// {
+			// 	printf("0x%02x,", send_cache[dev_id][n]);
+			// }
+			// printf("0x%x\n",crc_calc);
 		}
-
-		// printf("crc (%d)= \n", get_device_address() );
-		// for(uint32_t n = 0; n < cmd_size; n++)
-		// {
-		// 	printf("0x%02x,", send_cache[n]);
-		// }
-		// printf("\ncrc = %x\n", crc_calc);
 
 
 		cmd_size += sizeof(uint32_t);
@@ -360,7 +359,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
 	if ( read_length <= 0 )
 	{
-		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
+		// PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
 	 	return;
 	} else {
 		//printf("read data from %d mcu:\n",dev_id);
