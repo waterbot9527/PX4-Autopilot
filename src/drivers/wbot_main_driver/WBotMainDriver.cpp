@@ -57,8 +57,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
-	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.3/1-1.3.3.4/1-1.3.3.4:1.0";
+	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -241,22 +241,39 @@ int WBotMainDriver::Start()
 	uint32_t ret = list_tty(this->_serial_name);
 
 	PX4_INFO("list tty ret=%d\n",ret);
-	this->_serial_fd[0] = -1;
-	this->_serial_fd[1] = -1;
-	for (uint32_t n = 0; n < ret; n++)
+	for (uint32_t n = 0; n < 2; n++)
 	{
 
 		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
 		if ( this->_serial_fd[n] < 0 )
 		{
-
+			_device_connected[n] = false;  // 标记为未连接
+			printf("open serial=%d failed\n", n);
 		}
 		else
-		PX4_INFO("start serial=%s\n", this->_serial_name[n]);
+		{
+			_device_connected[n] = true;
+			PX4_INFO("start serial=%s\n", this->_serial_name[n]);
+		}
+
 	}
 
 	ScheduleOnInterval(5000_us); // 2ms interval
 	return PX4_OK;
+}
+
+void WBotMainDriver::handle_device_disconnect(uint8_t dev_id) {
+    _device_connected[dev_id] = false;
+    _last_disconnect_time[dev_id] = hrt_absolute_time();
+    _disconnect_count[dev_id]++;
+
+    PX4_WARN("Device %d disconnected, disconnect count: %d", dev_id, _disconnect_count[dev_id]);
+
+    // 关闭当前的文件描述符
+    if (_serial_fd[dev_id] >= 0) {
+        close(_serial_fd[dev_id]);
+        _serial_fd[dev_id] = -1;
+    }
 }
 
 uint32_t WBotMainDriver::check_update(void)
@@ -337,8 +354,22 @@ uint32_t WBotMainDriver::check_update(void)
 
 void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 {
-	if ( this->_serial_fd[dev_id] < 0)
+	// 检查设备是否已连接
+	if (this->_serial_fd[dev_id] < 0) {
+		//开始就打开失败
+		// printf("Device %d not connected\n", dev_id);
 		return;
+		if (!_device_connected[dev_id])
+		{
+			// 尝试重连设备
+			if (attempt_reconnect(dev_id)) {
+			// 重连成功，继续执行
+			} else {
+			// 重连失败，跳过此设备
+			return;
+			}
+		}
+	}
 
 	// TODO: add cmd
 	int write_length = ::write(this->_serial_fd[dev_id], send_cache[dev_id], cmd_size);
@@ -353,6 +384,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	// printf("\n");
 	if ( write_length != (int)cmd_size) {
 		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
+		handle_device_disconnect(dev_id);
 		return;
 	}
 
@@ -360,6 +392,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	if ( read_length <= 0 )
 	{
 		// PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
+		// handle_device_disconnect(dev_id);
 	 	return;
 	} else {
 		//printf("read data from %d mcu:\n",dev_id);
@@ -394,6 +427,35 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	}
 }
 
+bool WBotMainDriver::attempt_reconnect(uint8_t dev_id) {
+    // 检查是否到了重连时间
+    if (hrt_elapsed_time(&_last_disconnect_time[dev_id]) < RECONNECT_INTERVAL_US) {
+        return false;
+    }
+
+    // 检查是否超过最大重连次数
+    if (_disconnect_count[dev_id] > MAX_DISCONNECT_COUNT) {
+        // 尝试重新打开设备，使用固定路径
+        int new_fd = open_serial_fd(this->_serial_name[dev_id]);
+
+        if (new_fd >= 0) {
+            // 成功重连
+            _serial_fd[dev_id] = new_fd;
+            _device_connected[dev_id] = true;
+            _disconnect_count[dev_id] = 0;
+            PX4_INFO("Successfully reconnected to device %d on %s",
+                     dev_id, this->_serial_name[dev_id]);
+            return true;
+        } else {
+            // 重置断开计数，继续尝试
+            _last_disconnect_time[dev_id] = hrt_absolute_time();
+            PX4_WARN("Failed to reconnect to device %d", dev_id);
+        }
+    }
+
+    return false;
+}
+
 
 bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len)
 {
@@ -410,8 +472,6 @@ bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t mo
 	return true;
 }
 
-// data: 接收到的 SPI 包
-// 返回值: 0 成功，负数表示错误
 int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 
     constexpr uint32_t packet_head_size = 5 ;
