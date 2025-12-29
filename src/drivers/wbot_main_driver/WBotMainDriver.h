@@ -103,7 +103,7 @@ private:
 	bool _device_connected[TOTAL_SERIAL_COUNT] = {false, false};
 	hrt_abstime _last_disconnect_time[TOTAL_SERIAL_COUNT] = {0, 0};
 	int _disconnect_count[TOTAL_SERIAL_COUNT] = {0, 0};
-	static constexpr uint32_t RECONNECT_INTERVAL_US = 5000000; // 5秒重连间隔
+	static constexpr uint32_t RECONNECT_INTERVAL_US = 1000000; // 5秒重连间隔
 	static constexpr int MAX_DISCONNECT_COUNT = 5; // 最大断开次数
 
 	// 添加辅助函数

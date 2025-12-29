@@ -57,8 +57,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
-	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
+	const char* dev0 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
+	const char* dev1 =  "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -272,7 +272,6 @@ void WBotMainDriver::handle_device_disconnect(uint8_t dev_id) {
     // 关闭当前的文件描述符
     if (_serial_fd[dev_id] >= 0) {
         close(_serial_fd[dev_id]);
-        _serial_fd[dev_id] = -1;
     }
 }
 
@@ -355,20 +354,16 @@ uint32_t WBotMainDriver::check_update(void)
 void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 {
 	// 检查设备是否已连接
-	if (this->_serial_fd[dev_id] < 0) {
-		//开始就打开失败
-		// printf("Device %d not connected\n", dev_id);
+	if (!_device_connected[dev_id])  {
+		printf("Device %d not connected\n", dev_id);
+		// 尝试重连设备
+		if (attempt_reconnect(dev_id)) {
+			printf("Device %d reconnected\n", dev_id);
+		} else {
+			printf("Device %d reconnect failed\n", dev_id);
 		return;
-		if (!_device_connected[dev_id])
-		{
-			// 尝试重连设备
-			if (attempt_reconnect(dev_id)) {
-			// 重连成功，继续执行
-			} else {
-			// 重连失败，跳过此设备
-			return;
-			}
 		}
+		return;
 	}
 
 	// TODO: add cmd
@@ -391,8 +386,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
 	if ( read_length <= 0 )
 	{
-		// PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
-		// handle_device_disconnect(dev_id);
+		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
 	 	return;
 	} else {
 		//printf("read data from %d mcu:\n",dev_id);
@@ -430,29 +424,33 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 bool WBotMainDriver::attempt_reconnect(uint8_t dev_id) {
     // 检查是否到了重连时间
     if (hrt_elapsed_time(&_last_disconnect_time[dev_id]) < RECONNECT_INTERVAL_US) {
+	// printf("[WBotMainDriver] %s: %s: %s\n", __FUNCTION__, "重连间隔未到", "取消重连");
         return false;
     }
+//     printf("[WBotMainDriver] Attempting to reconnect to device %d\n", dev_id);
 
-    // 检查是否超过最大重连次数
-    if (_disconnect_count[dev_id] > MAX_DISCONNECT_COUNT) {
-        // 尝试重新打开设备，使用固定路径
-        int new_fd = open_serial_fd(this->_serial_name[dev_id]);
+    uint32_t ret = list_tty(this->_serial_name);
 
-        if (new_fd >= 0) {
-            // 成功重连
-            _serial_fd[dev_id] = new_fd;
-            _device_connected[dev_id] = true;
-            _disconnect_count[dev_id] = 0;
-            PX4_INFO("Successfully reconnected to device %d on %s",
-                     dev_id, this->_serial_name[dev_id]);
-            return true;
-        } else {
-            // 重置断开计数，继续尝试
-            _last_disconnect_time[dev_id] = hrt_absolute_time();
-            PX4_WARN("Failed to reconnect to device %d", dev_id);
-        }
-    }
-
+	PX4_INFO("list tty ret=%d\n",ret);
+	for (uint32_t n = 0; n < 2; n++)
+	{
+		if (!_device_connected[n])
+		{
+			this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
+			if ( this->_serial_fd[n] < 0 )
+			{
+				_device_connected[n] = false;  // 标记为未连接
+				printf("open serial=%d failed\n", n);
+				return false;
+			}
+			else
+			{
+				_device_connected[n] = true;
+				PX4_INFO("start serial=%s\n", this->_serial_name[n]);
+				return true;
+			}
+		}
+	}
     return false;
 }
 
@@ -645,10 +643,11 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			lsm6dsv16x_from_fs2_to_mg(*datay);
 			lsm6dsv16x_from_fs2_to_mg(*dataz);
 
-			// printf("accl x,y,z=%f %f %f\n",
-			// 	(double)lsm6dsv16x_from_fs2_to_mg(*datax),
-			// (double)lsm6dsv16x_from_fs2_to_mg(*datay),
-			// (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+			// printf("dev id = %d",dev_id);
+			printf("accl x,y,z=%f %f %f\n",
+				(double)lsm6dsv16x_from_fs2_to_mg(*datax),
+			(double)lsm6dsv16x_from_fs2_to_mg(*datay),
+			(double)lsm6dsv16x_from_fs2_to_mg(*dataz));
 			break;
 		}
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
