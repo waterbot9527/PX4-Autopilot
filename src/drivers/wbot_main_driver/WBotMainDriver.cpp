@@ -644,10 +644,10 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			lsm6dsv16x_from_fs2_to_mg(*dataz);
 
 			// printf("dev id = %d",dev_id);
-			printf("accl x,y,z=%f %f %f\n",
-				(double)lsm6dsv16x_from_fs2_to_mg(*datax),
-			(double)lsm6dsv16x_from_fs2_to_mg(*datay),
-			(double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+			// printf("accl x,y,z=%f %f %f\n",
+			// 	(double)lsm6dsv16x_from_fs2_to_mg(*datax),
+			// (double)lsm6dsv16x_from_fs2_to_mg(*datay),
+			// (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
 			break;
 		}
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
