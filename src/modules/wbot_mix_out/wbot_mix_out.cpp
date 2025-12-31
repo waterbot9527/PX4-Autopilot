@@ -11,22 +11,26 @@ static void set_raspberry_led(double pwm_value)
     const char *pwm_path = "/sys/class/pwm/pwmchip0/pwm0/duty_cycle";
     const uint32_t max_duty_cycle = 200000-1;
 
+    // 确保pwm_value在[0.0, 1.0]范围内
+    if (pwm_value < 0.0) {
+        pwm_value = 0.0;
+    } else if (pwm_value > 1.0) {
+        pwm_value = 1.0;
+    }
+
     // 以写模式打开文件（w = 覆盖写入）
     FILE *f = fopen(pwm_path, "w");
     if (!f) {
-        perror("Failed to open file");
+        PX4_ERR("Failed to open PWM file: %s", pwm_path);
         return;
     }
-    if (pwm_value < 0.0)
-    {
-	pwm_value = 0.0;
-    }
 
-    if (pwm_value > 1.0)
-    {
-	pwm_value = 1.0;
+    unsigned int duty_cycle_value = (unsigned int)(max_duty_cycle * pwm_value);
+    int result = fprintf(f, "%u", duty_cycle_value);
+
+    if (result < 0) {
+        PX4_ERR("Failed to write to PWM file: %s", strerror(errno));
     }
-    fprintf(f, "%u", (unsigned int)(max_duty_cycle * pwm_value));
 
     fclose(f);  // 关闭文件
 }
@@ -232,83 +236,75 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	} else {
 		PX4_ERR("Failed to publish wbot_ctrl_moto: publisher not inited");
 	}
+	// 添加按钮处理逻辑
+	if (num_outputs > 5) {  // 确保outputs[5]存在
+	uint16_t raw_buttons = outputs[5];
 
+	_current_buttons.led_increase = (raw_buttons >> 0) & 0x1;      // bit 0: 0x1
+	_current_buttons.reboot_MCU = (raw_buttons >> 1) & 0x1;        // bit 1: 0x2
+	_current_buttons.led_decrease = (raw_buttons >> 2) & 0x1;      // bit 2: 0x4
 
-	led_increase_button_value = 0x1 & outputs[5];
-	if((led_increase_button_value == 0x1 )&&  (led_increase_button_value!= led_increase_button_lastvalue))
-	{
-		double raspberry_pwm;
-		_led_msg.led_id = 0;
-
-		if (_led_msg.light_value >= 240)
-		{
-			_led_msg.light_value = 240;
-		}
-		else
-		{
-			_led_msg.light_value += 16;
-		}
-
-		raspberry_pwm = _led_msg.light_value / 255.0;
-		set_raspberry_led(raspberry_pwm);
-		_led_msg.timestamp = hrt_absolute_time();
-		if (_led_pub != nullptr) {
-            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-            		PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
-
-		} else {
-			PX4_ERR("Failed to publish wbot_led: publisher not inited");
-		}
+	// LED亮度增加控制 - 检测边沿触发（从0变到1）
+	if (_current_buttons.led_increase && !_previous_buttons.led_increase) {
+		handle_led_brightness_control(16);  // 增加亮度
 	}
-		led_increase_button_lastvalue = led_increase_button_value;
 
-	led_decrease_button_value = 0x4 & outputs[5];
-	if((led_decrease_button_value == 0x4 )&&  (led_decrease_button_value!= led_decrease_button_lastvalue))
-	{
-		double raspberry_pwm;
-		_led_msg.led_id = 0;
-		if (_led_msg.light_value <= 0)
-		{
-			_led_msg.light_value = 0;
-		}
-		else
-		{
-			_led_msg.light_value -= 16;
-		}
-
-		raspberry_pwm = _led_msg.light_value / 255.0;
-		set_raspberry_led(raspberry_pwm);
-		_led_msg.timestamp = hrt_absolute_time();
-		if (_led_pub != nullptr) {
-            		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-            		PX4_INFO("Published wbot_led message (LED button %d)",_led_msg.light_value);  // 调试用
-
-		} else {
-			PX4_ERR("Failed to publish wbot_led: publisher not inited");
-		}
+	// LED亮度减少控制 - 检测边沿触发（从0变到1）
+	if (_current_buttons.led_decrease && !_previous_buttons.led_decrease) {
+		handle_led_brightness_control(-16);  // 减少亮度
 	}
-		led_decrease_button_lastvalue = led_decrease_button_value;
 
-	reboot_button_value = 0b10 & outputs[5]; // 按钮？？
-	if(reboot_button_value != reboot_button_lastvalue)
-	{
-		_led_msg.led_id = 1;
-		_led_msg.timestamp = hrt_absolute_time();
-		if (_led_pub != nullptr) {
-			orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-			// PX4_INFO("Published wbot_led message (Reboot button)");  // 调试用
-		} else {
-			PX4_ERR("Failed to publish wbot_led: publisher not inited");
-		}
-		reboot_button_lastvalue = reboot_button_value;
+	// MCU重启控制 - 检测边沿触发（从0变到1）
+	if (_current_buttons.reboot_MCU && !_previous_buttons.reboot_MCU) {
+		handle_reboot_mcu();
 	}
-	// PX4_INFO(" reboot_button_value = %d\n ", reboot_button_value);
 
-        // 发布LED消息
+	// 更新上一次的按钮状态
+	_previous_buttons = _current_buttons;
+	}
 
 #endif
 
 	return true;
+}
+
+// 在cpp文件中添加辅助函数
+void WBotMixOut::handle_led_brightness_control(int8_t change_value) {
+    double raspberry_pwm;
+    _led_msg.led_id = 0;
+
+    int32_t new_value = _led_msg.light_value + change_value;
+
+    // 限制范围
+    if (new_value >= 240) {
+        new_value = 240;
+    } else if (new_value <= 0) {
+        new_value = 0;
+    }
+
+    _led_msg.light_value = new_value;
+    raspberry_pwm = _led_msg.light_value / 255.0;
+    set_raspberry_led(raspberry_pwm);
+
+    _led_msg.timestamp = hrt_absolute_time();
+    if (_led_pub != nullptr) {
+        orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+        PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg.light_value);
+    } else {
+        PX4_ERR("Failed to publish wbot_ctrl_led: publisher not inited");
+    }
+}
+
+void WBotMixOut::handle_reboot_mcu()
+{
+	_led_msg.led_id = 1;  // 重启命令
+	_led_msg.timestamp = hrt_absolute_time();
+	if (_led_pub != nullptr) {
+		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+		PX4_INFO("Published MCU reboot command");
+	} else {
+		PX4_ERR("Failed to publish wbot_ctrl_led: publisher not inited");
+	}
 }
 
 int WBotMixOut::print_usage(const char *reason)

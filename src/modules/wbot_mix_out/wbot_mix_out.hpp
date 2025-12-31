@@ -58,6 +58,29 @@ private:
 	orb_advert_t _moto_pub;
 	struct wbot_ctrl_moto_s _moto_msg{};
 	struct wbot_ctrl_led_s _led_msg{};
+
+	private:
+    struct ButtonState {
+        uint16_t led_increase : 1;    // bit 0
+        uint16_t reboot_MCU : 1;    // bit 1
+        uint16_t led_decrease : 1;    // bit 2
+        uint16_t reserved4 : 1;    // bit 3
+        uint16_t reserved5 : 1;    // bit 4
+        uint16_t reserved6 : 1;    // bit 5
+        uint16_t reserved7 : 1;    // bit 6
+        uint16_t reserved8 : 1;    // bit 7
+        uint16_t reserved9 : 1;    // bit 8
+        uint16_t reserved10 : 1;   // bit 9
+        uint16_t reserved11 : 1;   // bit 10
+        uint16_t reserved12 : 1;   // bit 11
+        uint16_t reserved13 : 1;   // bit 12
+        uint16_t reserved14 : 1;   // bit 13
+        uint16_t reserved15 : 1;   // bit 14
+        uint16_t reserved16 : 1;   // bit 15
+    	};
+
+	ButtonState _current_buttons{0};   // 初始化为0
+	ButtonState _previous_buttons{0};  // 初始化为0
 	uint16_t led_increase_button_value{0};
 	uint16_t led_increase_button_lastvalue{0};
 	uint16_t led_decrease_button_value{0};
@@ -71,5 +94,6 @@ private:
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 	void _init_orb_publishers();
-
+	void handle_led_brightness_control(int8_t change_value);
+	void handle_reboot_mcu();
 };
