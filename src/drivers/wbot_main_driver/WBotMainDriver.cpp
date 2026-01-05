@@ -36,8 +36,6 @@
 #include <unistd.h>
 #include <limits.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <time.h>
 
 #include "wbot_mcu_cmd.hpp"
 #include "wbot_mcu_def.h"
@@ -48,10 +46,10 @@
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
 #include "lsm6dsv16_utils.h"
 
-// 添加uORB头文件
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/sensor_combined.h>
 #include <uORB/topics/vehicle_magnetometer.h>
+
 
 using namespace time_literals;
 
@@ -63,7 +61,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	//const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
 	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
@@ -229,32 +228,31 @@ static int open_serial_fd(const char *serial_port)
 WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	rotation(static_cast<Rotation>(rotation_value))
+	rotation(static_cast<Rotation>(rotation_value)),
+	_px4_accel{PX4Accelerometer(0, rotation), PX4Accelerometer(1, rotation)},
+	_px4_gyro{PX4Gyroscope(0, rotation), PX4Gyroscope(1, rotation)}
 {
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
-	// 订阅传感器数据
-	_sensor_combined_sub = orb_subscribe(ORB_ID(sensor_combined));
-	_vehicle_mag_sub = orb_subscribe(ORB_ID(vehicle_magnetometer));
+
+	for(uint32_t n = 0; n < TOTAL_SERIAL_COUNT; n++)
+	{
+		_px4_accel[n].set_scale(6.2202f * (CONSTANTS_ONE_G / 1000.f)); // 0.061
+		_px4_accel[n].set_range(16.f * CONSTANTS_ONE_G);
+
+		_px4_gyro[n].set_scale(math::radians(35.f / 1000.f)); // 70 mdps/LSB
+		_px4_gyro[n].set_range(math::radians(2000.f));
+	}
+
+
 
 	wbot_crc32_init_table();
-
-	// 初始化CSV日志记录
-	init_csv_logger();
 }
 
 WBotMainDriver::~WBotMainDriver()
 {
 	ScheduleClear();
-
-	// 关闭日志文件
-	close_log_file();
-
-	orb_unsubscribe(_wbot_moto_sub);
-	orb_unsubscribe(_wbot_led_sub);
-	orb_unsubscribe(_sensor_combined_sub);
-	orb_unsubscribe(_vehicle_mag_sub);
 }
 
 int WBotMainDriver::Start()
@@ -440,9 +438,6 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 		perf_count(_right_perf);
 		break;
 	}
-
-	// 记录IMU和磁力计数据
-	log_imu_mag_data();
 }
 
 bool WBotMainDriver::attempt_reconnect(uint8_t dev_id) {
@@ -653,6 +648,11 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 	int16_t *datax, *datay, *dataz;
 	(void)datax;(void)datay;(void)dataz;
+
+	sensor_accel_fifo_s accel{};
+	accel.timestamp_sample = _now;
+	accel.samples = 0;
+
 	for (uint32_t n=0; n<cnt; n++)
 	{
 		lsm6dsv16x_fifo_out_raw_t f_data;
@@ -663,9 +663,19 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		switch (f_data.tag) {
 		case 2: //LSM6DSV16X_XL_NC_TAG:
 		{
+			// TODO 这里不需要手工scale 了， 在 sensors 模块里会根据构造函数里的值去scale
+			/*
 			lsm6dsv16x_from_fs2_to_mg(*datax);
 			lsm6dsv16x_from_fs2_to_mg(*datay);
 			lsm6dsv16x_from_fs2_to_mg(*dataz);
+
+
+			*/
+
+			accel.x[accel.samples] = *datax;
+			accel.y[accel.samples] = *datay;
+			accel.z[accel.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
+			accel.samples++;
 
 			// printf("dev id = %d",dev_id);
 			// printf("accl x,y,z=%f %f %f\n",
@@ -718,140 +728,13 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 	}
 
+	if (accel.samples > 0) {
+		_px4_accel[dev_id].updateFIFO(accel);
+	}
+
 	return true;
 }
 
-void WBotMainDriver::init_csv_logger()
-{
-	// 生成带时间戳的文件名
-	time_t rawtime;
-	char time_buffer[100];
-	time(&rawtime);
-	strftime(time_buffer, 100, "%Y%m%d_%H%M%S", localtime(&rawtime));
-	snprintf(_log_filename, sizeof(_log_filename), "imu_mag_log_%s.csv", time_buffer);
-
-	// 创建CSV文件
-	_log_file = fopen(_log_filename, "w");
-	if (_log_file != nullptr) {
-		create_csv_header();
-		PX4_INFO("IMU/Mag logger initialized, file: %s", _log_filename);
-		_logging_enabled = true;
-	} else {
-		PX4_ERR("Failed to create log file: %s", _log_filename);
-		_logging_enabled = false;
-	}
-}
-
-void WBotMainDriver::log_imu_mag_data()
-{
-	if (!_logging_enabled) {
-		return;
-	}
-	
-	// 检查传感器数据更新
-	bool sensor_updated = false;
-	sensor_combined_s sensor_data;
-	if (orb_check(_sensor_combined_sub, &sensor_updated) == PX4_OK && sensor_updated) {
-		orb_copy(ORB_ID(sensor_combined), _sensor_combined_sub, &sensor_data);
-	}
-	
-	// 检查磁力计数据更新
-	bool mag_updated = false;
-	vehicle_magnetometer_s mag_data;
-	if (orb_check(_vehicle_mag_sub, &mag_updated) == PX4_OK && mag_updated) {
-		orb_copy(ORB_ID(vehicle_magnetometer), _vehicle_mag_sub, &mag_data);
-	}
-	
-	// 如果任一数据更新，则记录数据
-	if (sensor_updated || mag_updated) {
-		// 填充传感器数据结构
-		SensorData data;
-		data.timestamp = hrt_absolute_time();  // 微秒时间戳
-		
-		// 如果传感器数据更新，则使用传感器数据
-		if (sensor_updated) {
-			data.accel_x = sensor_data.accelerometer_m_s2[0];  // m/s²
-			data.accel_y = sensor_data.accelerometer_m_s2[1];  // m/s²
-			data.accel_z = sensor_data.accelerometer_m_s2[2];  // m/s²
-			data.gyro_x = sensor_data.gyro_rad[0];             // rad/s
-			data.gyro_y = sensor_data.gyro_rad[1];             // rad/s
-			data.gyro_z = sensor_data.gyro_rad[2];             // rad/s
-		}
-		
-		// 如果磁力计数据更新，则使用磁力计数据
-		if (mag_updated) {
-			// 转换磁力计数据为高斯单位（原始数据为特斯拉，1特斯拉 = 10000高斯）
-			data.mag_x = mag_data.magnetometer_ga[0];  // 高斯
-			data.mag_y = mag_data.magnetometer_ga[1];  // 高斯
-			data.mag_z = mag_data.magnetometer_ga[2];  // 高斯
-		}
-		
-		// 将数据添加到缓冲区
-		_sensor_buffer[_buffer_index] = data;
-		_buffer_index = (_buffer_index + 1) % BUFFER_SIZE;
-		
-		// 如果缓冲区满了，写入数据
-		if (_buffer_index == 0) {
-			write_sensor_data_to_csv();
-		}
-	}
-	
-	// 定期写入数据（如果缓冲区未满但时间间隔足够）
-	hrt_abstime now = hrt_absolute_time();
-	if (now - _last_log_time > 100000) { // 每100毫秒写入一次
-		write_sensor_data_to_csv();
-		_last_log_time = now;
-	}
-}
-
-void WBotMainDriver::create_csv_header()
-{
-	if (_log_file != nullptr) {
-		fprintf(_log_file, "timestamp_us,accel_x_mps2,accel_y_mps2,accel_z_mps2,gyro_x_radps,gyro_y_radps,gyro_z_radps,mag_x_gauss,mag_y_gauss,mag_z_gauss\n");
-		fflush(_log_file);
-	}
-}
-
-void WBotMainDriver::write_sensor_data_to_csv()
-{
-	if (_log_file == nullptr || !_logging_enabled) {
-		return;
-	}
-	
-	// 写入缓冲区中的所有数据
-	for (int i = 0; i < BUFFER_SIZE; i++) {
-		if (_sensor_buffer[i].timestamp != 0) {
-			fprintf(_log_file, "%llu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
-				(unsigned long long)_sensor_buffer[i].timestamp,
-				(double)_sensor_buffer[i].accel_x,
-				(double)_sensor_buffer[i].accel_y,
-				(double)_sensor_buffer[i].accel_z,
-				(double)_sensor_buffer[i].gyro_x,
-				(double)_sensor_buffer[i].gyro_y,
-				(double)_sensor_buffer[i].gyro_z,
-				(double)_sensor_buffer[i].mag_x,
-				(double)_sensor_buffer[i].mag_y,
-				(double)_sensor_buffer[i].mag_z
-			);
-			
-			// 清除已写入的数据 - 使用值初始化替代memset
-			_sensor_buffer[i] = SensorData{};
-		}
-	}
-	
-	// 刷新缓冲区到磁盘
-	fflush(_log_file);
-}
-
-void WBotMainDriver::close_log_file()
-{
-	if (_log_file != nullptr) {
-		fclose(_log_file);
-		_log_file = nullptr;
-		PX4_INFO("IMU/Mag log file closed: %s", _log_filename);
-	}
-	_logging_enabled = false;
-}
 
 void WBotMainDriver::Run()
 {
@@ -862,7 +745,8 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
+	//for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
+	for (uint32_t dev_id = 0; dev_id < 1; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
@@ -935,3 +819,4 @@ Water Robot Main Driver module.
 
 	return 0;
 }
+

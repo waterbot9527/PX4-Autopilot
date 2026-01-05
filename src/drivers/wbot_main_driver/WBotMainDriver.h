@@ -52,16 +52,8 @@
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
 
-// 添加用于IMU和磁力计数据记录的头文件
-#include <uORB/topics/sensor_combined.h>
-#include <uORB/topics/vehicle_magnetometer.h>
-#include <lib/perf/perf_counter.h>
-
-#include <fstream>
-#include <cstring>
-#include <ctime>
-#include <vector>
-#include <cstdio>
+#include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
+#include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 
 
 class WBotMainDriver : public ModuleBase<WBotMainDriver>, public ModuleParams, public px4::ScheduledWorkItem
@@ -126,38 +118,13 @@ private:
 
 	hrt_abstime _now = hrt_absolute_time();
 
+
+	PX4Accelerometer _px4_accel[TOTAL_SERIAL_COUNT];
+	PX4Gyroscope _px4_gyro[TOTAL_SERIAL_COUNT];
+
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
 	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
 	perf_counter_t _right_perf{perf_alloc(PC_COUNT, MODULE_NAME": all_right")};
 
-	// IMU和磁力计数据记录相关变量
-	int _sensor_combined_sub{-1};
-	int _vehicle_mag_sub{-1};
-	
-	// CSV日志记录相关
-	FILE *_log_file{nullptr};
-	char _log_filename[256];
-	hrt_abstime _last_log_time{0};
-	
-	// 数据缓冲区
-	struct SensorData {
-		hrt_abstime timestamp{0};
-		float accel_x{0.0f}, accel_y{0.0f}, accel_z{0.0f};  // m/s²
-		float gyro_x{0.0f}, gyro_y{0.0f}, gyro_z{0.0f};    // rad/s
-		float mag_x{0.0f}, mag_y{0.0f}, mag_z{0.0f};       // Gauss
-	};
-	
-	// 环形缓冲区，存储待写入的数据
-	static constexpr int BUFFER_SIZE = 1000;
-	SensorData _sensor_buffer[BUFFER_SIZE];
-	int _buffer_index{0};
-	bool _logging_enabled{false};
-
-	// IMU和磁力计数据记录功能函数
-	void init_csv_logger();
-	void log_imu_mag_data();
-	void write_sensor_data_to_csv();
-	void create_csv_header();
-	void close_log_file();
 };
