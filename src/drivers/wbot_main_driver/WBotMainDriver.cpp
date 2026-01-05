@@ -304,7 +304,7 @@ uint32_t WBotMainDriver::check_update(void)
 
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
-		PX4_INFO("LED Control update\n");
+		// PX4_INFO("LED Control update\n");
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
@@ -440,6 +440,7 @@ bool WBotMainDriver::attempt_reconnect(uint8_t dev_id) {
 			if ( this->_serial_fd[n] < 0 )
 			{
 				_device_connected[n] = false;  // 标记为未连接
+				_last_disconnect_time[dev_id] = hrt_absolute_time();
 				printf("open serial=%d failed\n", n);
 				return false;
 			}

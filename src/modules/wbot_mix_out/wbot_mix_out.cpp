@@ -287,11 +287,18 @@ void WBotMixOut::handle_led_brightness_control(int8_t change_value) {
     _led_msg.light_value = new_value;
     raspberry_pwm = _led_msg.light_value / 255.0;
     set_raspberry_led(raspberry_pwm);
+    //前后灯方案不一样，所以亮度需要调整
+    memcpy(&_led_msg_for_publish,&_led_msg,sizeof(wbot_ctrl_led_s));
+    if (_led_msg_for_publish.light_value >0 && _led_msg_for_publish.light_value < (240-48))
+    {
+	_led_msg_for_publish.light_value+=36;
+    }
 
     _led_msg.timestamp = hrt_absolute_time();
     if (_led_pub != nullptr) {
-        orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
-        PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg.light_value);
+        orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg_for_publish);
+	PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg.light_value);
+        PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg_for_publish.light_value);
     } else {
         PX4_ERR("Failed to publish wbot_ctrl_led: publisher not inited");
     }
