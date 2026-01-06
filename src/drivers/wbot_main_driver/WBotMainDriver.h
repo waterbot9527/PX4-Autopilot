@@ -51,8 +51,6 @@
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
-#include <uORB/topics/vehicle_magnetometer.h>
-#include <uORB/topics/sensor_combined.h>
 
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
@@ -82,9 +80,6 @@ public:
 private:
 	orb_advert_t _water_press_pub = nullptr;
 	orb_advert_t _water_temp_pub = nullptr;
-	
-	// 添加sensor_combined发布者
-	orb_advert_t _sensor_combined_pub[TOTAL_SERIAL_COUNT] = {nullptr, nullptr};
 
 	void Run() override;
 
@@ -125,11 +120,9 @@ private:
 	hrt_abstime _now = hrt_absolute_time();
 
 
-	PX4Accelerometer _px4_accel[TOTAL_SERIAL_COUNT];
-	PX4Gyroscope _px4_gyro[TOTAL_SERIAL_COUNT];
-
-	// 添加磁力计对象
-	PX4Magnetometer _px4_mag[TOTAL_SERIAL_COUNT];
+	PX4Accelerometer *_px4_accel[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
+	PX4Gyroscope *_px4_gyro[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
+	//PX4Magnetometer _px4_mag[TOTAL_SERIAL_COUNT];
 
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};

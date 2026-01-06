@@ -231,28 +231,25 @@ static int open_serial_fd(const char *serial_port)
 WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	rotation(static_cast<Rotation>(rotation_value)),
-	_px4_accel{PX4Accelerometer(0, rotation), PX4Accelerometer(1, rotation)},
-	_px4_gyro{PX4Gyroscope(0, rotation), PX4Gyroscope(1, rotation)},
-	_px4_mag{PX4Magnetometer(0, rotation), PX4Magnetometer(1, rotation)}
+	rotation(static_cast<Rotation>(rotation_value))
 {
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
-	for(uint32_t n = 0; n < TOTAL_SERIAL_COUNT; n++)
+	const uint32_t enable_dev_num = 1;
+	for(uint32_t dev_id = 0; dev_id < enable_dev_num; dev_id++)
 	{
-		// 设置设备ID，这样系统可以识别传感器
-		_px4_accel[n].set_device_id(0x16777215); // 模拟设备ID
-		_px4_accel[n].set_scale(6.2202f * (CONSTANTS_ONE_G / 1000.f)); // 0.061
-		_px4_accel[n].set_range(16.f * CONSTANTS_ONE_G);
+		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, rotation);
+		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, rotation);
 
-		_px4_gyro[n].set_device_id(0x16777215); // 模拟设备ID
-		_px4_gyro[n].set_scale(math::radians(35.f / 1000.f)); // 70 mdps/LSB
-		_px4_gyro[n].set_range(math::radians(2000.f));
 
-		// 为磁力计设置适当的刻度值，PX4Magnetometer没有set_range方法
-		_px4_mag[n].set_device_id(0x16777215); // 模拟设备ID
-		_px4_mag[n].set_scale(0.001f); // 设置适当的刻度值
+		_px4_accel[dev_id]->set_scale(0.061f * CONSTANTS_ONE_G/1000); // 0.061 参考 lsm6dsv16x.pdf 的 Table 3
+		_px4_accel[dev_id]->set_range(2.f * CONSTANTS_ONE_G);
+
+		_px4_gyro[dev_id]->set_scale(math::radians(35.f / 1000.f)); // 70 mdps/LSB
+		_px4_gyro[dev_id]->set_range(math::radians(2000.f));
+
+		// _px4_mag[n].set_scale(0.0015f); // 设置适当的刻度值
 	}
 
 
@@ -270,7 +267,7 @@ int WBotMainDriver::Start()
 	uint32_t ret = list_tty(this->_serial_name);
 
 	PX4_INFO("list tty ret=%d\n",ret);
-	for (uint32_t n = 0; n < 2; n++)
+	for (uint32_t n = 0; n < TOTAL_SERIAL_COUNT; n++)
 	{
 
 		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
@@ -353,7 +350,7 @@ uint32_t WBotMainDriver::check_update(void)
 		cmd_size += 2;
 
 	}
-	if ( cmd_size > 3 )
+	if ( cmd_size >= 3 )
 	{
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
 		{
@@ -397,25 +394,27 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 
 	// TODO: add cmd
 	int write_length = ::write(this->_serial_fd[dev_id], send_cache[dev_id], cmd_size);
-	// printf("dev = %d writting, write_length = %d ",dev_id,write_length);
+	// printf("dev = %d writting, write_length = %d ",dev_id,write_length , cmd_size);
 	// for (int n = 0; n < write_length; n++)
 	// {
-	// 	printf(" 0x%02x, ", send_cache[n]);
+	// 	printf(" 0x%02x, ", send_cache[dev_id][n]);
 	// 	if ( (n+1) % 16 == 0 ) {
 	// 		printf("\n");
 	// 	}
 	// }
-	// printf("\n");
+	//printf("\n");
 	if ( write_length != (int)cmd_size) {
 		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		handle_device_disconnect(dev_id);
 		return;
+	} else {
+		//PX4_WARN("wbot main write success, dev id=%i", dev_id);
 	}
 
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
 	if ( read_length <= 0 )
 	{
-		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
+		PX4_WARN("wbot main can't read , dev id=%i, ret=%d fd=%d", dev_id, read_length, this->_serial_fd[dev_id]);
 	 	return;
 	} else {
 		//printf("read data from %d mcu:\n",dev_id);
@@ -667,6 +666,10 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 	gyro.timestamp_sample = _now;
 	gyro.samples = 0;
 
+	// sensor_mag_s mag{};
+	// mag.timestamp_sample = _now;
+	// mag.samples = 0;
+
 	for (uint32_t n=0; n<cnt; n++)
 	{
 		lsm6dsv16x_fifo_out_raw_t f_data;
@@ -677,20 +680,16 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		switch (f_data.tag) {
 		case 2: //LSM6DSV16X_XL_NC_TAG:
 		{
+			// float tx = lsm6dsv16x_from_fs2_to_mg(*datax);
+			// float ty = lsm6dsv16x_from_fs2_to_mg(*datay);
+			// float tz = lsm6dsv16x_from_fs2_to_mg(*dataz);
+			// printf("test accel %f %f %f\n", (double)tx, (double)ty, (double)tz);
+
 			// 处理加速度计数据
 			accel.x[accel.samples] = *datax;
 			accel.y[accel.samples] = *datay;
 			accel.z[accel.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
 			accel.samples++;
-
-			// 同时发布标准加速度计数据，供EKF2使用
-			// 使用预设的缩放值进行转换
-			float x_accel = *datax * (6.2202f * (CONSTANTS_ONE_G / 1000.f)); // 使用与构造函数中相同的缩放值
-			float y_accel = *datay * (6.2202f * (CONSTANTS_ONE_G / 1000.f));
-			float z_accel = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
-			z_accel *= (6.2202f * (CONSTANTS_ONE_G / 1000.f));
-
-			_px4_accel[dev_id].update(_now, x_accel, y_accel, z_accel);
 
 			break;
 		}
@@ -709,28 +708,17 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			gyro.z[gyro.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
 			gyro.samples++;
 
-			// 同时发布标准陀螺仪数据，供EKF2使用
-			// 使用预设的缩放值进行转换
-			float x_gyro = *datax * math::radians(35.f / 1000.f); // 使用与构造函数中相同的缩放值
-			float y_gyro = *datay * math::radians(35.f / 1000.f);
-			float z_gyro = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
-			z_gyro *= math::radians(35.f / 1000.f);
-
-			_px4_gyro[dev_id].update(_now, x_gyro, y_gyro, z_gyro);
-
           		break;
 		}
 		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
 		{
 			// 无干扰下， 正常数据应在 400 mG 数量级（几百毫高斯）
 
-			// 转换磁力计数据为高斯单位
+			/*
 			float x_gauss = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
 			float y_gauss = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
 			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
-
-			// 发布磁力计数据
-			_px4_mag[dev_id].update(_now, x_gauss, y_gauss, z_gauss);
+			*/
 
 			break;
 		}
@@ -745,42 +733,11 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 	}
 
 	if (accel.samples > 0) {
-		_px4_accel[dev_id].updateFIFO(accel);
+		_px4_accel[dev_id]->updateFIFO(accel);
 	}
 
 	if (gyro.samples > 0) {
-		_px4_gyro[dev_id].updateFIFO(gyro);
-	}
-
-	// 发布sensor_combined数据，供EKF2使用
-	if (accel.samples > 0 && gyro.samples > 0) {
-		sensor_combined_s sensor_combined{};
-		sensor_combined.timestamp = _now;
-
-		// 设置最后的加速度计和陀螺仪数据
-		sensor_combined.accelerometer_m_s2[0] = accel.x[accel.samples - 1] * (6.2202f * (CONSTANTS_ONE_G / 1000.f));
-		sensor_combined.accelerometer_m_s2[1] = accel.y[accel.samples - 1] * (6.2202f * (CONSTANTS_ONE_G / 1000.f));
-		sensor_combined.accelerometer_m_s2[2] = accel.z[accel.samples - 1] * (6.2202f * (CONSTANTS_ONE_G / 1000.f));
-
-		sensor_combined.gyro_rad[0] = gyro.x[gyro.samples - 1] * math::radians(35.f / 1000.f);
-		sensor_combined.gyro_rad[1] = gyro.y[gyro.samples - 1] * math::radians(35.f / 1000.f);
-		sensor_combined.gyro_rad[2] = gyro.z[gyro.samples - 1] * math::radians(35.f / 1000.f);
-
-		// 设置传感器校准计数器
-		sensor_combined.accel_calibration_count = 1;  // 表示已校准
-		sensor_combined.gyro_calibration_count = 1;   // 表示已校准
-
-		// 设置相对时间戳
-		sensor_combined.accelerometer_timestamp_relative = (int32_t)(_now - _now);
-		sensor_combined.gyro_integral_dt = 10000;  // 10ms间隔，单位微秒
-		sensor_combined.accelerometer_integral_dt = 10000;  // 10ms间隔，单位微秒
-
-		// 发布sensor_combined数据
-		if (_sensor_combined_pub[dev_id] == nullptr) {
-			_sensor_combined_pub[dev_id] = orb_advertise(ORB_ID(sensor_combined), &sensor_combined);
-		} else {
-			orb_publish(ORB_ID(sensor_combined), _sensor_combined_pub[dev_id], &sensor_combined);
-		}
+		_px4_gyro[dev_id]->updateFIFO(gyro);
 	}
 
 	return true;
