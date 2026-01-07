@@ -52,11 +52,15 @@
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
 
+#include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
+#include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
+#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
+
 
 class WBotMainDriver : public ModuleBase<WBotMainDriver>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-	WBotMainDriver(uint8_t rotation_value);
+	WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id);
 	~WBotMainDriver() override;
 
 	/** @see ModuleBase */
@@ -72,6 +76,8 @@ public:
 
 
 	static constexpr uint32_t TOTAL_SERIAL_COUNT = 2;
+
+	uint32_t _max_dev_id;
 
 private:
 	orb_advert_t _water_press_pub = nullptr;
@@ -114,6 +120,11 @@ private:
 	int _wbot_led_sub = -1;
 
 	hrt_abstime _now = hrt_absolute_time();
+
+
+	PX4Accelerometer *_px4_accel[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
+	PX4Gyroscope *_px4_gyro[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
+	//PX4Magnetometer _px4_mag[TOTAL_SERIAL_COUNT];
 
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};

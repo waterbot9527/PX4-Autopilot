@@ -46,6 +46,13 @@
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
 #include "lsm6dsv16_utils.h"
 
+#include <uORB/Subscription.hpp>
+#include <uORB/topics/sensor_combined.h>
+#include <uORB/topics/vehicle_magnetometer.h>
+#include <uORB/topics/sensor_accel_fifo.h>
+#include <uORB/topics/sensor_gyro_fifo.h>
+#include <uORB/topics/sensor_mag.h>
+
 
 using namespace time_literals;
 
@@ -57,7 +64,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	//const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
 	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
@@ -220,13 +228,32 @@ static int open_serial_fd(const char *serial_port)
 	return serial_fd;
 }
 
-WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
+WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	rotation(static_cast<Rotation>(rotation_value))
 {
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
+
+	this->_max_dev_id = max_dev_id;
+
+	for(uint32_t dev_id = 0; dev_id <= max_dev_id; dev_id++)
+	{
+		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, rotation);
+		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, rotation);
+
+
+		_px4_accel[dev_id]->set_scale(0.061f * CONSTANTS_ONE_G/1000); // 0.061 参考 lsm6dsv16x.pdf 的 Table 3
+		_px4_accel[dev_id]->set_range(2.f * CONSTANTS_ONE_G);
+
+		_px4_gyro[dev_id]->set_scale(math::radians(35.f / 1000.f)); // 70 mdps/LSB
+		_px4_gyro[dev_id]->set_range(math::radians(2000.f));
+
+		// _px4_mag[n].set_scale(0.0015f); // 设置适当的刻度值
+	}
+
+
 
 	wbot_crc32_init_table();
 }
@@ -241,7 +268,7 @@ int WBotMainDriver::Start()
 	uint32_t ret = list_tty(this->_serial_name);
 
 	PX4_INFO("list tty ret=%d\n",ret);
-	for (uint32_t n = 0; n < 2; n++)
+	for (uint32_t n = 0; n < TOTAL_SERIAL_COUNT; n++)
 	{
 
 		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
@@ -324,7 +351,7 @@ uint32_t WBotMainDriver::check_update(void)
 		cmd_size += 2;
 
 	}
-	if ( cmd_size > 3 )
+	if ( cmd_size >= 3 )
 	{
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
 		{
@@ -368,15 +395,15 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 
 	// TODO: add cmd
 	int write_length = ::write(this->_serial_fd[dev_id], send_cache[dev_id], cmd_size);
-	// printf("dev = %d writting, write_length = %d ",dev_id,write_length);
+	// printf("dev = %d writting, write_length = %d ",dev_id,write_length , cmd_size);
 	// for (int n = 0; n < write_length; n++)
 	// {
-	// 	printf(" 0x%02x, ", send_cache[n]);
+	// 	printf(" 0x%02x, ", send_cache[dev_id][n]);
 	// 	if ( (n+1) % 16 == 0 ) {
 	// 		printf("\n");
 	// 	}
 	// }
-	// printf("\n");
+	//printf("\n");
 	if ( write_length != (int)cmd_size) {
 		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		handle_device_disconnect(dev_id);
@@ -630,6 +657,19 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 	int16_t *datax, *datay, *dataz;
 	(void)datax;(void)datay;(void)dataz;
+
+	sensor_accel_fifo_s accel{};
+	accel.timestamp_sample = _now;
+	accel.samples = 0;
+
+	sensor_gyro_fifo_s gyro{};
+	gyro.timestamp_sample = _now;
+	gyro.samples = 0;
+
+	// sensor_mag_s mag{};
+	// mag.timestamp_sample = _now;
+	// mag.samples = 0;
+
 	for (uint32_t n=0; n<cnt; n++)
 	{
 		lsm6dsv16x_fifo_out_raw_t f_data;
@@ -640,15 +680,17 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		switch (f_data.tag) {
 		case 2: //LSM6DSV16X_XL_NC_TAG:
 		{
-			lsm6dsv16x_from_fs2_to_mg(*datax);
-			lsm6dsv16x_from_fs2_to_mg(*datay);
-			lsm6dsv16x_from_fs2_to_mg(*dataz);
+			// float tx = lsm6dsv16x_from_fs2_to_mg(*datax);
+			// float ty = lsm6dsv16x_from_fs2_to_mg(*datay);
+			// float tz = lsm6dsv16x_from_fs2_to_mg(*dataz);
+			// printf("test accel %f %f %f\n", (double)tx, (double)ty, (double)tz);
 
-			// printf("dev id = %d",dev_id);
-			// printf("accl x,y,z=%f %f %f\n",
-			// 	(double)lsm6dsv16x_from_fs2_to_mg(*datax),
-			// (double)lsm6dsv16x_from_fs2_to_mg(*datay),
-			// (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+			// 处理加速度计数据
+			accel.x[accel.samples] = *datax;
+			accel.y[accel.samples] = *datay;
+			accel.z[accel.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
+			accel.samples++;
+
 			break;
 		}
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
@@ -660,29 +702,24 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		}
 		case 1: //LSM6DSV16X_GY_NC_TAG:
 		{
-			// datasheet : Table 3. Mechanical characteristics
-                	lsm6dsv16x_from_fs1000_to_mdps(*datax);
-                	lsm6dsv16x_from_fs1000_to_mdps(*datay);
-                	lsm6dsv16x_from_fs1000_to_mdps(*dataz);
-			// PX4_INFO("gray x,y,z=%f %f %f\n",
-			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
-			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
-			// 	(double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
-			// );
+			// 处理陀螺仪数据
+			gyro.x[gyro.samples] = *datax;
+			gyro.y[gyro.samples] = *datay;
+			gyro.z[gyro.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
+			gyro.samples++;
+
           		break;
 		}
 		case 0xE: //LSM6DSV16X_SENSORHUB_SLAVE0_TAG:
 		{
 			// 无干扰下， 正常数据应在 400 mG 数量级（几百毫高斯）
 
-			lis2mdl_from_lsb_to_mgauss(*datax);
-			lis2mdl_from_lsb_to_mgauss(*datay);
-			lis2mdl_from_lsb_to_mgauss(*dataz);
-			// PX4_INFO("guass x,y,z=%f %f %f\n",
-			// 	(double)lis2mdl_from_lsb_to_mgauss(*datax),
-			// 	(double)lis2mdl_from_lsb_to_mgauss(*datay),
-			// 	(double)lis2mdl_from_lsb_to_mgauss(*dataz)
-			// );
+			/*
+			float x_gauss = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
+			float y_gauss = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
+			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
+			*/
+
 			break;
 		}
 		case 0: //LSM6DSV16X_FIFO_EMPTY:
@@ -694,6 +731,20 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		}
 
 	}
+
+	if (dev_id <= this->_max_dev_id)
+	{
+		if (accel.samples > 0) {
+			_px4_accel[dev_id]->updateFIFO(accel);
+		}
+
+		if (gyro.samples > 0) {
+			_px4_gyro[dev_id]->updateFIFO(gyro);
+		}
+
+	}
+
+
 
 	return true;
 }
@@ -708,7 +759,7 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
+	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
@@ -718,12 +769,16 @@ void WBotMainDriver::Run()
 int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
 	int n_value = 0;
+	int dev_value = 1;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
 
-	while ((ch = px4_getopt(argc, argv, "r:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "r:d:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
+		case 'd':
+			dev_value = atoi(myoptarg);
+			break;
 		case 'r':
 			n_value = atoi(myoptarg);
 			break;
@@ -734,7 +789,7 @@ int WBotMainDriver::task_spawn(int argc, char *argv[])
 		}
 	}
 
-	WBotMainDriver *instance = new WBotMainDriver(n_value);
+	WBotMainDriver *instance = new WBotMainDriver(n_value, dev_value);
 
 	if (!instance) {
 		PX4_ERR("alloc failed");
@@ -777,6 +832,7 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
+	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
