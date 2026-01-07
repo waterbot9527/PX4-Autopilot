@@ -228,7 +228,7 @@ static int open_serial_fd(const char *serial_port)
 	return serial_fd;
 }
 
-WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
+WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
 	rotation(static_cast<Rotation>(rotation_value))
@@ -236,8 +236,9 @@ WBotMainDriver::WBotMainDriver(uint8_t rotation_value) :
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
-	const uint32_t enable_dev_num = 1;
-	for(uint32_t dev_id = 0; dev_id < enable_dev_num; dev_id++)
+	this->_max_dev_id = max_dev_id;
+
+	for(uint32_t dev_id = 0; dev_id <= max_dev_id; dev_id++)
 	{
 		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, rotation);
 		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, rotation);
@@ -732,13 +733,19 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 	}
 
-	if (accel.samples > 0) {
-		_px4_accel[dev_id]->updateFIFO(accel);
+	if (dev_id <= this->_max_dev_id)
+	{
+		if (accel.samples > 0) {
+			_px4_accel[dev_id]->updateFIFO(accel);
+		}
+
+		if (gyro.samples > 0) {
+			_px4_gyro[dev_id]->updateFIFO(gyro);
+		}
+
 	}
 
-	if (gyro.samples > 0) {
-		_px4_gyro[dev_id]->updateFIFO(gyro);
-	}
+
 
 	return true;
 }
@@ -753,8 +760,7 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	//for (uint32_t dev_id = 0; dev_id < WBotMainDriver::TOTAL_SERIAL_COUNT; dev_id++)
-	for (uint32_t dev_id = 0; dev_id < 1; dev_id++)
+	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
@@ -764,12 +770,16 @@ void WBotMainDriver::Run()
 int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
 	int n_value = 0;
+	int dev_value = 1;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
 
-	while ((ch = px4_getopt(argc, argv, "r:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "r:d:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
+		case 'd':
+			dev_value = atoi(myoptarg);
+			break;
 		case 'r':
 			n_value = atoi(myoptarg);
 			break;
@@ -780,7 +790,7 @@ int WBotMainDriver::task_spawn(int argc, char *argv[])
 		}
 	}
 
-	WBotMainDriver *instance = new WBotMainDriver(n_value);
+	WBotMainDriver *instance = new WBotMainDriver(n_value, dev_value);
 
 	if (!instance) {
 		PX4_ERR("alloc failed");
@@ -823,6 +833,7 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
+	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;

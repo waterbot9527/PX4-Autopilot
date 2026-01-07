@@ -60,7 +60,7 @@
 class WBotMainDriver : public ModuleBase<WBotMainDriver>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-	WBotMainDriver(uint8_t rotation_value);
+	WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id);
 	~WBotMainDriver() override;
 
 	/** @see ModuleBase */
@@ -76,6 +76,8 @@ public:
 
 
 	static constexpr uint32_t TOTAL_SERIAL_COUNT = 2;
+
+	uint32_t _max_dev_id;
 
 private:
 	orb_advert_t _water_press_pub = nullptr;
