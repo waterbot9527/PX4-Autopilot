@@ -769,7 +769,7 @@ void WBotMainDriver::Run()
 int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
 	int n_value = 0;
-	int dev_value = 1;
+	int dev_value = 0;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
