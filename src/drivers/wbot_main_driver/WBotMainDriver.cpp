@@ -763,7 +763,7 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
+	for (uint32_t dev_id = 0; dev_id < TOTAL_SERIAL_COUNT ; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
