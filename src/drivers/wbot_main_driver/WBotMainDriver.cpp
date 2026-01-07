@@ -763,7 +763,7 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	for (uint32_t dev_id = 0; dev_id < TOTAL_SERIAL_COUNT ; dev_id++)
+	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
@@ -773,7 +773,7 @@ void WBotMainDriver::Run()
 int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
 	int n_value = 0;
-	int dev_value = 0;
+	int dev_value = 1;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
@@ -836,7 +836,7 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
-	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
+	PRINT_MODULE_USAGE_PARAM_INT('d', 1, 0, 1, "max enable dev id", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
