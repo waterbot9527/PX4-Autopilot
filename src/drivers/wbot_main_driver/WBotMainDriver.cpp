@@ -64,8 +64,8 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	//const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
-	const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
+	const char* dev0 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
 	const char* dev1 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
@@ -759,7 +759,7 @@ void WBotMainDriver::Run()
 
 	uint32_t cmd_size = check_update();
 
-	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
+	for (uint32_t dev_id = 0; dev_id < TOTAL_SERIAL_COUNT ; dev_id++)
 	{
 		RunForOne(dev_id, cmd_size);
 		// PX4_INFO("wbot_main_driver running\n");
