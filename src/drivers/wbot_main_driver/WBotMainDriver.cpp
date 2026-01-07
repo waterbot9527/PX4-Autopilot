@@ -242,6 +242,7 @@ WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
 	{
 		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, rotation);
 		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, rotation);
+		_px4_mag[dev_id] = new PX4Magnetometer(14123400 + dev_id, rotation);
 
 
 		_px4_accel[dev_id]->set_scale(0.061f * CONSTANTS_ONE_G/1000); // 0.061 参考 lsm6dsv16x.pdf 的 Table 3
@@ -250,7 +251,7 @@ WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
 		_px4_gyro[dev_id]->set_scale(math::radians(35.f / 1000.f)); // 70 mdps/LSB
 		_px4_gyro[dev_id]->set_range(math::radians(2000.f));
 
-		// _px4_mag[n].set_scale(0.0015f); // 设置适当的刻度值
+		_px4_mag[dev_id]->set_scale(1.5f/1000.f); // 设置适当的刻度值
 	}
 
 
@@ -666,9 +667,6 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 	gyro.timestamp_sample = _now;
 	gyro.samples = 0;
 
-	// sensor_mag_s mag{};
-	// mag.timestamp_sample = _now;
-	// mag.samples = 0;
 
 	for (uint32_t n=0; n<cnt; n++)
 	{
@@ -718,7 +716,13 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			float x_gauss = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
 			float y_gauss = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
 			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
+			printf("mag %f %f %f\n", (double)x_gauss, (double)y_gauss, (double)z_gauss);
 			*/
+
+			if ( dev_id <= this->_max_dev_id)
+			{
+				this->_px4_mag[dev_id]->update(this->_now, *datax, *datay, *dataz);
+			}
 
 			break;
 		}

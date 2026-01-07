@@ -124,7 +124,7 @@ private:
 
 	PX4Accelerometer *_px4_accel[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
 	PX4Gyroscope *_px4_gyro[TOTAL_SERIAL_COUNT] = { nullptr , nullptr};
-	//PX4Magnetometer _px4_mag[TOTAL_SERIAL_COUNT];
+	PX4Magnetometer *_px4_mag[TOTAL_SERIAL_COUNT] = { nullptr, nullptr };
 
 	perf_counter_t _bad_packhead_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet header")};
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
