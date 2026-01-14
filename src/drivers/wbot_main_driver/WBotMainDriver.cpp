@@ -694,8 +694,8 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 		case 4: //LSM6DSV16X_TIMESTAMP_TAG:
 		{
 			int32_t *ts = (int32_t *)&f_data.data[0];
-			float_t aa = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
-			(void)aa;
+			float_t imu_ts = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
+			(void)imu_ts;
 			break;
 		}
 		case 1: //LSM6DSV16X_GY_NC_TAG:
