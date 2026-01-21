@@ -758,6 +758,12 @@ void WBotMainDriver::Run()
 		return;
 	}
 
+	// 检查参数更新
+	parameter_update_s param_update;
+	if (_parameter_update_sub.update(&param_update)) {
+		// 参数已更新，可以在这里做相应处理
+	}
+
 	uint32_t cmd_size = check_update();
 
 	for (uint32_t dev_id = 0; dev_id <= this->_max_dev_id ; dev_id++)
@@ -814,6 +820,21 @@ int WBotMainDriver::task_spawn(int argc, char *argv[])
 
 int WBotMainDriver::custom_command(int argc, char *argv[])
 {
+	if (argc < 1) {
+		return print_usage("missing command");
+	}
+
+	if (!strcmp(argv[0], "print_data") || !strcmp(argv[0], "pd")) {
+		WBotMainDriver *instance = _object.load();  // 使用.load()方法获取实例
+		if (instance == nullptr) {
+			PX4_WARN("Not running");
+			return -1;
+		}
+
+		instance->printSensorData();
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -834,8 +855,64 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
 	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("print_data", "Print current sensor data (accel, gyro, attitude) and calibration params");
+	PRINT_MODULE_USAGE_COMMAND("pd");  // Short alias for print_data
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
 }
 
+void WBotMainDriver::printSensorData()
+{
+	// 获取并打印加速度计数据
+	sensor_accel_s accel_data;
+	if (_sensor_accel_sub.copy(&accel_data)) {
+		PX4_INFO("sensor_accel: x=%.3f, y=%.3f, z=%.3f (m/s^2)",
+		         (double)accel_data.x, (double)accel_data.y, (double)accel_data.z);
+	} else {
+		PX4_WARN("Failed to get sensor_accel data");
+	}
+
+	// 获取并打印陀螺仪数据
+	sensor_gyro_s gyro_data;
+	if (_sensor_gyro_sub.copy(&gyro_data)) {
+		PX4_INFO("sensor_gyro: x=%.3f, y=%.3f, z=%.3f (rad/s)",
+		         (double)gyro_data.x, (double)gyro_data.y, (double)gyro_data.z);
+	} else {
+		PX4_WARN("Failed to get sensor_gyro data");
+	}
+
+	// 获取并打印姿态数据
+	vehicle_attitude_s attitude_data;
+	if (_vehicle_attitude_sub.copy(&attitude_data)) {
+		// 将四元数转换为欧拉角 (Roll, Pitch, Yaw)
+		matrix::Eulerf euler{matrix::Quatf{attitude_data.q}};
+		float roll_deg = math::degrees(euler(0));  // Roll
+		float pitch_deg = math::degrees(euler(1)); // Pitch
+		float yaw_deg = math::degrees(euler(2));   // Yaw
+
+		PX4_INFO("vehicle_attitude: Roll=%.2f deg, Pitch=%.2f deg, Yaw=%.2f deg",
+		         (double)roll_deg, (double)pitch_deg, (double)yaw_deg);
+	} else {
+		PX4_WARN("Failed to get vehicle_attitude data");
+	}
+
+	// 获取并打印校准参数
+	// 获取CAL_ACC0_ROT参数
+	int32_t cal_acc0_rot = 0;
+	int result = param_get(param_find("CAL_ACC0_ROT"), &cal_acc0_rot);
+	if (result == 0) {
+		PX4_INFO("CAL_ACC0_ROT: %d", cal_acc0_rot);
+	} else {
+		PX4_WARN("Failed to get CAL_ACC0_ROT parameter");
+	}
+	
+	// 获取CAL_GYRO0_ROT参数
+	int32_t cal_gyro0_rot = 0;
+	result = param_get(param_find("CAL_GYRO0_ROT"), &cal_gyro0_rot);
+	if (result == 0) {
+		PX4_INFO("CAL_GYRO0_ROT: %d", cal_gyro0_rot);
+	} else {
+		PX4_WARN("Failed to get CAL_GYRO0_ROT parameter");
+	}
+}
