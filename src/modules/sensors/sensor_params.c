@@ -159,9 +159,64 @@ PARAM_DEFINE_FLOAT(SENS_DPRES_ANSC, 0);
  * @value 38 Roll 90°, Pitch 68°, Yaw 293°
  * @value 39 Pitch 315°
  * @value 40 Roll 90°, Pitch 315°
+ * @value 41 Pitch 45°
+ * @value 42 Pitch 315°, Yaw 90°
+ * @value 43 Pitch 315°, Yaw 180°
+ * @value 44 Pitch 315°, Yaw 270°
+ * @value 45 Pitch 225°
+ * @value 46 Pitch 225°, Yaw 90°
+ * @value 47 Pitch 225°, Yaw 180°
+ * @value 48 Pitch 225°, Yaw 270°
+ * @value 49 Pitch 135°
+ * @value 50 Pitch 135°, Yaw 90°
+ * @value 51 Pitch 135°, Yaw 180°
+ * @value 52 Pitch 135°, Yaw 270°
+ * @value 53 Pitch 45°, Yaw 90°
+ * @value 54 Pitch 45°, Yaw 180°
+ * @value 55 Pitch 45°, Yaw 270°
+ * @value 56 Roll 180°, Pitch 225°
+ * @value 57 Roll 180°, Pitch 225°, Yaw 90°
+ * @value 58 Roll 180°, Pitch 225°, Yaw 180°
+ * @value 59 Roll 180°, Pitch 225°, Yaw 270°
+ * @value 60 Roll 180°, Pitch 135°
+ * @value 61 Roll 180°, Pitch 135°, Yaw 90°
+ * @value 62 Roll 180°, Pitch 135°, Yaw 180°
+ * @value 63 Roll 180°, Pitch 135°, Yaw 270°
+ * @value 64 Roll 180°, Pitch 45°
+ * @value 65 Roll 180°, Pitch 45°, Yaw 90°
+ * @value 66 Roll 180°, Pitch 45°, Yaw 180°
+ * @value 67 Roll 180°, Pitch 45°, Yaw 270°
+ * @value 68 Roll 90°, Pitch 225°
+ * @value 69 Roll 90°, Pitch 225°, Yaw 90°
+ * @value 70 Roll 90°, Pitch 225°, Yaw 180°
+ * @value 71 Roll 90°, Pitch 225°, Yaw 270°
+ * @value 72 Roll 90°, Pitch 135°
+ * @value 73 Roll 90°, Pitch 135°, Yaw 90°
+ * @value 74 Roll 90°, Pitch 135°, Yaw 180°
+ * @value 75 Roll 90°, Pitch 135°, Yaw 270°
+ * @value 76 Roll 90°, Pitch 45°
+ * @value 77 Roll 90°, Pitch 45°, Yaw 90°
+ * @value 78 Roll 90°, Pitch 45°, Yaw 180°
+ * @value 79 Roll 90°, Pitch 45°, Yaw 270°
+ * @value 80 Roll 270°, Pitch 225°
+ * @value 81 Roll 270°, Pitch 225°, Yaw 90°
+ * @value 82 Roll 270°, Pitch 225°, Yaw 180°
+ * @value 83 Roll 270°, Pitch 225°, Yaw 270°
+ * @value 84 Roll 270°, Pitch 135°
+ * @value 85 Roll 270°, Pitch 135°, Yaw 90°
+ * @value 86 Roll 270°, Pitch 135°, Yaw 180°
+ * @value 87 Roll 270°, Pitch 135°, Yaw 270°
+ * @value 88 Roll 270°, Pitch 45°
+ * @value 89 Roll 270°, Pitch 45°, Yaw 90°
+ * @value 90 Roll 270°, Pitch 45°, Yaw 180°
+ * @value 91 Roll 270°, Pitch 45°, Yaw 270°
+ * @value 92 Pitch 270°, Yaw 90°
+ * @value 93 Pitch 270°, Yaw 180°
+ * @value 94 Pitch 270°, Yaw 270°
+ * @value 95 Pitch 315°, Roll 270°
  *
  * @min -1
- * @max 40
+ * @max 95
  * @reboot_required true
  * @group Sensors
  */

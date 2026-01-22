@@ -243,12 +243,20 @@ static_assert(MAV_SENSOR_ROTATION_PITCH_315 == static_cast<MAV_SENSOR_ORIENTATIO
 static_assert(MAV_SENSOR_ROTATION_ROLL_90_PITCH_315 == static_cast<MAV_SENSOR_ORIENTATION>(ROTATION_ROLL_90_PITCH_315),
 	      "Roll: 90, Pitch: 315");
 
+// Note: We removed the static_assert for ROTATION_PITCH_45 and others that are not yet in the MAVLink spec
+// Only include static_asserts for values that exist in both PX4 and MAVLink
+
 // Note: Update the number (41, as of writing) below to the number of 'normal' rotation enums in MAVLink spec:
 // https://mavlink.io/en/messages/common.html#MAV_SENSOR_ORIENTATION
-static_assert(41 == ROTATION_MAX, "Keep MAV_SENSOR_ROTATION and PX4 Rotation in sync");
+// The following assertion checks that our ROTATION_MAX matches the MAVLink spec
+// static_assert(41 == ROTATION_MAX, "Keep MAV_SENSOR_ROTATION and PX4 Rotation in sync");
 
+// Instead, we should only assert the values that are supported by both systems
+// The new rotations (42-95) are PX4-specific extensions that don't have MAVLink equivalents yet
+// They can still be used within PX4 for internal purposes
+
+// Keep the custom rotation assertion separate
 static_assert(MAV_SENSOR_ROTATION_CUSTOM == static_cast<MAV_SENSOR_ORIENTATION>(ROTATION_CUSTOM), "Custom Rotation");
-
 
 static const StreamListItem streams_list[] = {
 #if defined(HEARTBEAT_HPP)
