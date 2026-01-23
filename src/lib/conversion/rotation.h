@@ -115,7 +115,7 @@ enum Rotation : uint8_t {
 	ROTATION_ROLL_180_PITCH_135_YAW_90  = 61,
 	ROTATION_ROLL_180_PITCH_135_YAW_180 = 62,
 	ROTATION_ROLL_180_PITCH_135_YAW_270 = 63,
-	ROTATION_ROLL_180_PITCH_45        = 64,
+	ROTATION_ROLL_356_PITCH_45       = 64,// Note: This should be ROTATION_ROLL_180_PITCH_45
 	ROTATION_ROLL_180_PITCH_45_YAW_90  = 65,
 	ROTATION_ROLL_180_PITCH_45_YAW_180 = 66,
 	ROTATION_ROLL_180_PITCH_45_YAW_270 = 67,
@@ -201,8 +201,7 @@ static constexpr rot_lookup_t rot_lookup[ROTATION_MAX] = {
 	{ 90,  68, 293 },
 	{  0, 315,   0 },
 	{ 90, 315,   0 },
-	//新加的旋转定义
-	{  0,  45,   0 },
+	{  0,  45,   0 },//新加的旋转定义
 	{  0, 315,  90 },
 	{  0, 315, 180 },
 	{  0, 315, 270 },
@@ -225,7 +224,7 @@ static constexpr rot_lookup_t rot_lookup[ROTATION_MAX] = {
 	{180, 135,  90 },
 	{180, 135, 180 },
 	{180, 135, 270 },
-	{180,  45,   0 },
+	{180,   0,   0 },//数值更改
 	{180,  45,  90 },
 	{180,  45, 180 },
 	{180,  45, 270 },
