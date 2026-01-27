@@ -13,3 +13,4 @@ int16[32] y               # angular velocity in the FRD board frame Y-axis in ra
 int16[32] z               # angular velocity in the FRD board frame Z-axis in rad/s
 
 uint8 ORB_QUEUE_LENGTH = 4
+uint8 MAX_SAMPLES = 32

@@ -64,9 +64,9 @@ using namespace time_literals;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
 	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
-	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
+	const char* dev0 =  "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -332,7 +332,7 @@ uint32_t WBotMainDriver::check_update(void)
 
 	orb_check(_wbot_led_sub, &updated);  // 检查订阅的 topic 是否有新数据
 	if (updated) {
-		// PX4_INFO("LED Control update\n");
+		PX4_INFO("LED Control update\n");
 		struct wbot_ctrl_led_s data;
 		orb_copy(ORB_ID(wbot_ctrl_led), _wbot_led_sub, &data);
 		for (dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++)
@@ -383,12 +383,12 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 {
 	// 检查设备是否已连接
 	if (!_device_connected[dev_id])  {
-		printf("Device %d not connected\n", dev_id);
+		// printf("Device %d not connected\n", dev_id);
 		// 尝试重连设备
 		if (attempt_reconnect(dev_id)) {
-			printf("Device %d reconnected\n", dev_id);
+			// printf("Device %d reconnected\n", dev_id);
 		} else {
-			printf("Device %d reconnect failed\n", dev_id);
+			// printf("Device %d reconnect failed\n", dev_id);
 		return;
 		}
 		return;
@@ -414,7 +414,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	int read_length = read_full_packet(this->_serial_fd[dev_id], recv_cache);
 	if ( read_length <= 0 )
 	{
-		PX4_WARN("wbot main can't read , dev id=%i, ret=%d", dev_id, read_length);
+		PX4_WARN("wbot main can't read , dev id=%i, ret=%d fd=%d", dev_id, read_length, this->_serial_fd[dev_id]);
 	 	return;
 	} else {
 		//printf("read data from %d mcu:\n",dev_id);
@@ -716,7 +716,6 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			float x_gauss = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
 			float y_gauss = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
 			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
-			printf("mag %f %f %f\n", (double)x_gauss, (double)y_gauss, (double)z_gauss);
 			*/
 
 			if ( dev_id <= this->_max_dev_id)
@@ -817,6 +816,21 @@ int WBotMainDriver::task_spawn(int argc, char *argv[])
 
 int WBotMainDriver::custom_command(int argc, char *argv[])
 {
+	if (argc < 1) {
+		return print_usage("missing command");
+	}
+
+	if (!strcmp(argv[0], "print_data") || !strcmp(argv[0], "pd")) {
+		WBotMainDriver *instance = _object.load();  // 使用.load()方法获取实例
+		if (instance == nullptr) {
+			PX4_WARN("Not running");
+			return -1;
+		}
+
+		instance->printSensorData();
+		return 0;
+	}
+
 	return print_usage("unknown command");
 }
 
@@ -836,9 +850,65 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
-	PRINT_MODULE_USAGE_PARAM_INT('d', 1, 0, 1, "max enable dev id", true);
+	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("print_data", "Print current sensor data (accel, gyro, attitude) and calibration params");
+	PRINT_MODULE_USAGE_COMMAND("pd");  // Short alias for print_data
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
 }
 
+void WBotMainDriver::printSensorData()
+{
+	// 获取并打印加速度计数据
+	sensor_accel_s accel_data;
+	if (_sensor_accel_sub.copy(&accel_data)) {
+		PX4_INFO("sensor_accel: x=%.3f, y=%.3f, z=%.3f (m/s^2)",
+		         (double)accel_data.x, (double)accel_data.y, (double)accel_data.z);
+	} else {
+		PX4_WARN("Failed to get sensor_accel data");
+	}
+
+	// 获取并打印陀螺仪数据
+	sensor_gyro_s gyro_data;
+	if (_sensor_gyro_sub.copy(&gyro_data)) {
+		PX4_INFO("sensor_gyro: x=%.3f, y=%.3f, z=%.3f (rad/s)",
+		         (double)gyro_data.x, (double)gyro_data.y, (double)gyro_data.z);
+	} else {
+		PX4_WARN("Failed to get sensor_gyro data");
+	}
+
+	// 获取并打印姿态数据
+	vehicle_attitude_s attitude_data;
+	if (_vehicle_attitude_sub.copy(&attitude_data)) {
+		// 将四元数转换为欧拉角 (Roll, Pitch, Yaw)
+		matrix::Eulerf euler{matrix::Quatf{attitude_data.q}};
+		float roll_deg = math::degrees(euler(0));  // Roll
+		float pitch_deg = math::degrees(euler(1)); // Pitch
+		float yaw_deg = math::degrees(euler(2));   // Yaw
+
+		PX4_INFO("vehicle_attitude: Roll=%.2f deg, Pitch=%.2f deg, Yaw=%.2f deg",
+		         (double)roll_deg, (double)pitch_deg, (double)yaw_deg);
+	} else {
+		PX4_WARN("Failed to get vehicle_attitude data");
+	}
+
+	// 获取并打印校准参数
+	// 获取CAL_ACC0_ROT参数
+	int32_t cal_acc0_rot = 0;
+	int result = param_get(param_find("CAL_ACC0_ROT"), &cal_acc0_rot);
+	if (result == 0) {
+		PX4_INFO("CAL_ACC0_ROT: %d", cal_acc0_rot);
+	} else {
+		PX4_WARN("Failed to get CAL_ACC0_ROT parameter");
+	}
+
+	// 获取CAL_GYRO0_ROT参数
+	int32_t cal_gyro0_rot = 0;
+	result = param_get(param_find("CAL_GYRO0_ROT"), &cal_gyro0_rot);
+	if (result == 0) {
+		PX4_INFO("CAL_GYRO0_ROT: %d", cal_gyro0_rot);
+	} else {
+		PX4_WARN("Failed to get CAL_GYRO0_ROT parameter");
+	}
+}

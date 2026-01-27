@@ -1,5 +1,16 @@
 #include "LSM6DSV16X.hpp"
 
+// 添加宏定义以解决枚举访问问题
+#define LSM6DSV16X_GY_NC_TAG 1
+#define LSM6DSV16X_XL_NC_TAG 2
+#define LSM6DSV16X_TEMPERATURE_TAG 3
+#define LSM6DSV16X_TIMESTAMP_TAG 4
+#define LSM6DSV16X_SENSORHUB_SLAVE0_TAG 0xE
+#define LSM6DSV16X_SENSORHUB_SLAVE1_TAG 0xF
+#define LSM6DSV16X_SENSORHUB_SLAVE2_TAG 0x10
+#define LSM6DSV16X_SENSORHUB_SLAVE3_TAG 0x11
+
+
 using namespace time_literals;
 
 stmdev_ctx_t LSM6DSV16X::lsm6dsv16x_ctx = {};
@@ -18,6 +29,10 @@ LSM6DSV16X::LSM6DSV16X(const I2CSPIDriverConfig &config) :
     _px4_gyro(get_device_id(), config.rotation),
     _px4_mag(get_device_id(), config.rotation)  // 初始化磁力计
 {
+    // 初始化FIFO数据结构
+    memset(&_accel_fifo_data, 0, sizeof(_accel_fifo_data));
+    memset(&_gyro_fifo_data, 0, sizeof(_gyro_fifo_data));
+    memset(&_mag_data, 0, sizeof(_mag_data));
     ConfigureSampleRate(_px4_gyro.get_max_rate_hz());
 }
 
@@ -213,76 +228,128 @@ void LSM6DSV16X::RunImpl()
 {
     lsm6dsv16x_fifo_status_t fifo_status;
     lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
-    // DEVICE_LOG("fifo_status.fifo_bdr = %d \nfifo_status.fifo_full = %d \nfifo_status.fifo_level = %d \nfifo_status.fifo_ovr = %d \nfifo_status.fifo_th = %d \n",fifo_status.fifo_bdr,fifo_status.fifo_full,fifo_status.fifo_level,fifo_status.fifo_ovr,fifo_status.fifo_th);
+
     if (fifo_status.fifo_th) {
         uint16_t num = 0;
         int16_t *datax;
         int16_t *datay;
         int16_t *dataz;
-        int32_t *ts;
-        /* 读取FIFO状态 */
+
         lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
         num = fifo_status.fifo_level;
 
-        // DEVICE_LOG("-- FIFO num %d \r\n", num);
+        hrt_abstime current_time = hrt_absolute_time();
 
-        while (num--) {
+        // 重置FIFO数据结构
+        _accel_samples = 0;
+        _gyro_samples = 0;
+        _mag_samples = 0;
+
+        // 初始化FIFO数据结构
+        _accel_fifo_data.timestamp_sample = current_time;
+        _gyro_fifo_data.timestamp_sample = current_time;
+
+        while (num-- && (_accel_samples < sensor_accel_fifo_s::MAX_SAMPLES ||
+                         _gyro_samples < sensor_gyro_fifo_s::MAX_SAMPLES ||
+                         _mag_samples < 1)) { // 磁力计通常单独处理
+
             lsm6dsv16x_fifo_out_raw_t f_data;
-            float_t ts_usec;
 
             /* 读取FIFO数据 */
             lsm6dsv16x_fifo_out_raw_get(&lsm6dsv16x_ctx, &f_data);
             datax = (int16_t *)&f_data.data[0];
             datay = (int16_t *)&f_data.data[2];
             dataz = (int16_t *)&f_data.data[4];
-            ts = (int32_t *)&f_data.data[0];
 
             switch (f_data.tag) {
-            case 1: //LSM6DSV16X_GY_NC_TAG:
-                    {
-                        // datasheet : Table 3. Mechanical characteristics
-                        lsm6dsv16x_from_fs1000_to_mdps(*datax);
-                        lsm6dsv16x_from_fs1000_to_mdps(*datay);
-                        lsm6dsv16x_from_fs1000_to_mdps(*dataz);
-                        // DEVICE_LOG("gray:\t%4.2f\t%4.2f\t%4.2f\r\n",
-                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*datax),
-                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*datay),
-                        //     (double)lsm6dsv16x_from_fs1000_to_mdps(*dataz)
-                        // );
-                        break;
-                    }
-            case 0x2:
-                lsm6dsv16x_from_fs2_to_mg(*datax);
-                lsm6dsv16x_from_fs2_to_mg(*datay);
-                lsm6dsv16x_from_fs2_to_mg(*dataz);
-                // DEVICE_LOG("ACC:\t%4.2f\t%4.2f\t%4.2f[mg]\r\n",
-                //         (double)lsm6dsv16x_from_fs2_to_mg(*datax),
-                //         (double)lsm6dsv16x_from_fs2_to_mg(*datay),
-                //         (double)lsm6dsv16x_from_fs2_to_mg(*dataz));
+            case LSM6DSV16X_GY_NC_TAG: // 陀螺仪数据
+                if (_gyro_samples < sensor_gyro_fifo_s::MAX_SAMPLES) {
+                    // 转换陀螺仪数据 (dps -> rad/s)
+                    float gyro_x = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*datax) / 1000.0f);
+                    float gyro_y = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*datay) / 1000.0f);
+                    float gyro_z = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*dataz) / 1000.0f);
+
+                    // 不应用旋转校正，直接赋值
+                    _gyro_fifo_data.x[_gyro_samples] = gyro_x;
+                    _gyro_fifo_data.y[_gyro_samples] = gyro_y;
+                    _gyro_fifo_data.z[_gyro_samples] = gyro_z;
+
+                    _gyro_samples++;
+                }
                 break;
-            case 0x4:
-                ts_usec = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
-                ts_usec = ts_usec;
-                // DEVICE_LOG("TIMESTAMP %6.1f [us] (lsb: %d)\r\n", (double)ts_usec, *ts);
+
+            case LSM6DSV16X_XL_NC_TAG: // 加速度计数据
+                if (_accel_samples < sensor_accel_fifo_s::MAX_SAMPLES) {
+                    // 转换加速度数据 (mg -> m/s^2)
+                    float accel_x = lsm6dsv16x_from_fs2_to_mg(*datax) / 1000.0f * CONSTANTS_ONE_G;
+                    float accel_y = lsm6dsv16x_from_fs2_to_mg(*datay) / 1000.0f * CONSTANTS_ONE_G;
+                    float accel_z = lsm6dsv16x_from_fs2_to_mg(*dataz) / 1000.0f * CONSTANTS_ONE_G;
+
+                    // 不应用旋转校正，直接赋值
+                    _accel_fifo_data.x[_accel_samples] = accel_x;
+                    _accel_fifo_data.y[_accel_samples] = accel_y;
+                    _accel_fifo_data.z[_accel_samples] = accel_z;
+
+                    _accel_samples++;
+                }
                 break;
-            case 0xE:
-                (double)lis2mdl_from_lsb_to_mgauss(*datax);
-                (double)lis2mdl_from_lsb_to_mgauss(*datay);
-                (double)lis2mdl_from_lsb_to_mgauss(*dataz);
-                // DEVICE_LOG("LIS2MDL:\t%4.2f\t%4.2f\t%4.2f[mGa]\r\n",
-                //         (double)lis2mdl_from_lsb_to_mgauss(*datax),
-                //         (double)lis2mdl_from_lsb_to_mgauss(*datay),
-                //         (double)lis2mdl_from_lsb_to_mgauss(*dataz));
+
+            case LSM6DSV16X_SENSORHUB_SLAVE0_TAG: // 磁力计数据 (通过Sensor Hub)
+                if (_mag_samples < 1) { // 一次处理一个磁力计样本
+                    // 转换磁力计数据 (mGauss -> Gauss)
+                    float mag_x = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
+                    float mag_y = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
+                    float mag_z = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
+
+                    // 不应用旋转校正，直接赋值
+                    _mag_data.timestamp_sample = current_time;
+                    _mag_data.device_id = get_device_id();
+                    _mag_data.x = mag_x;
+                    _mag_data.y = mag_y;
+                    _mag_data.z = mag_z;
+                    _mag_data.temperature = NAN; // 如果有温度传感器可以填入
+
+                    _mag_samples++;
+                }
                 break;
+
+            case LSM6DSV16X_TIMESTAMP_TAG: // 时间戳
+                {
+                    int32_t *ts = (int32_t *)&f_data.data[0];  // 在局部作用域内使用 ts
+                    float ts_usec = lsm6dsv16x_from_lsb_to_nsec(*ts) / 1000.0f;
+                    ts_usec = ts_usec;
+                    // 使用硬件时间戳更新采样时间
+                    _last_timestamp = current_time;
+                }
+                break;
+
             default:
-                DEVICE_LOG("Invalid TAG %02x\r\n", f_data.tag);
+                // 忽略未知标签
                 break;
             }
         }
-        // DEVICE_LOG("------ \r\n\r\n");
+
+        // 发布加速度计FIFO数据
+        if (_accel_samples > 0) {
+            _accel_fifo_data.samples = _accel_samples;
+            _accel_fifo_data.timestamp = current_time;
+            _accel_fifo_pub.publish(_accel_fifo_data);
+        }
+
+        // 发布陀螺仪FIFO数据
+        if (_gyro_samples > 0) {
+            _gyro_fifo_data.samples = _gyro_samples;
+            _gyro_fifo_data.timestamp = current_time;
+            _gyro_fifo_pub.publish(_gyro_fifo_data);
+        }
+
+        // 发布磁力计数据
+        if (_mag_samples > 0) {
+            _mag_data.timestamp = current_time;
+            _mag_pub.publish(_mag_data);
+        }
     }
 }
-
 void LSM6DSV16X::ConfigureSampleRate(int sample_rate)
 {
 

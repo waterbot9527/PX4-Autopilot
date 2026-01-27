@@ -11,6 +11,10 @@
 #include <lib/drivers/st_lsm6dsv16x_common/lsm6dsv16x_reg.h>
 #include <lib/drivers/st_lis2mdl_common/lis2mdl_reg.h>
 #include <time.h>
+#include <uORB/PublicationMulti.hpp>
+#include <uORB/topics/sensor_accel_fifo.h>
+#include <uORB/topics/sensor_gyro_fifo.h>
+#include <uORB/topics/sensor_mag.h>
 
 
 class LSM6DSV16X : public device::I2C, public I2CSPIDriver<LSM6DSV16X>
@@ -46,6 +50,21 @@ private:
     bool Configure();
     void ConfigureSampleRate(int sample_rate);
 
+    // 添加发布者
+    uORB::PublicationMulti<sensor_accel_fifo_s> _accel_fifo_pub{ORB_ID(sensor_accel_fifo)};
+    uORB::PublicationMulti<sensor_gyro_fifo_s> _gyro_fifo_pub{ORB_ID(sensor_gyro_fifo)};
+    uORB::PublicationMulti<sensor_mag_s> _mag_pub{ORB_ID(sensor_mag)};
+
+    // 用于批量处理FIFO数据
+    sensor_accel_fifo_s _accel_fifo_data{};
+    sensor_gyro_fifo_s _gyro_fifo_data{};
+    sensor_mag_s _mag_data{};
+
+    // FIFO数据计数器
+    uint8_t _accel_samples{0};
+    uint8_t _gyro_samples{0};
+    uint8_t _mag_samples{0};
+
     /* 设备上下文 */
     static stmdev_ctx_t lsm6dsv16x_ctx;
     static stmdev_ctx_t lis2mdl_ctx;
@@ -75,6 +94,7 @@ private:
     hrt_abstime _reset_timestamp{0};
     hrt_abstime _last_config_check_timestamp{0};
     hrt_abstime _temperature_update_timestamp{0};
+    hrt_abstime _last_timestamp{0};
     int _failure_count{0};
 
     enum class STATE : uint8_t {

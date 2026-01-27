@@ -47,10 +47,14 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/conversion/rotation.h>
 
-
+#include <uORB/Subscription.hpp>  // 添加这个头文件以支持uORB::Subscription
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
+#include <uORB/topics/sensor_accel.h>
+#include <uORB/topics/sensor_gyro.h>
+#include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/parameter_update.h>
 
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
@@ -95,8 +99,22 @@ private:
 	bool parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t len);
 	bool parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len);
 
+	// 新增函数用于打印传感器数据
+	void printSensorData();
+
 	Rotation rotation{Rotation::ROTATION_NONE};
 
+	// 添加用于监听传感器数据和姿态的订阅者
+	uORB::Subscription _sensor_accel_sub{ORB_ID(sensor_accel)};
+	uORB::Subscription _sensor_gyro_sub{ORB_ID(sensor_gyro)};
+	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
+
+	// 添加标志来控制打印频率
+	bool _print_once{true};
+
+	// 添加上次打印时间
+	hrt_abstime _last_print_time{0};
 
 	int _serial_fd[TOTAL_SERIAL_COUNT] = {-1, -1};
 	char _serial_name[TOTAL_SERIAL_COUNT][4096];
@@ -109,7 +127,7 @@ private:
 	bool _device_connected[TOTAL_SERIAL_COUNT] = {false, false};
 	hrt_abstime _last_disconnect_time[TOTAL_SERIAL_COUNT] = {0, 0};
 	int _disconnect_count[TOTAL_SERIAL_COUNT] = {0, 0};
-	static constexpr uint32_t RECONNECT_INTERVAL_US = 1000000; // 5秒重连间隔
+	static constexpr uint32_t RECONNECT_INTERVAL_US = 60000000; // 5秒重连间隔
 	static constexpr int MAX_DISCONNECT_COUNT = 5; // 最大断开次数
 
 	// 添加辅助函数
