@@ -7,8 +7,8 @@
 
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 //#include <px4_platform_common/px4_log.h>
-#define  MOTO_TEST
-// #define  LED_TEST
+// #define  MOTO_TEST
+#define  LED_TEST
 extern "C" __EXPORT int wbot_moto_test_main(int argc, char *argv[]);
 
 int wbot_moto_test_main(int argc, char *argv[])
@@ -39,7 +39,7 @@ int wbot_moto_test_main(int argc, char *argv[])
     }
 #endif
 
-    if (cmd1 == 1) {
+    if (cmd1 != 0) {
 #ifdef LED_TEST
         // LED测试功能（仅当定义LED_TEST时编译）
         struct wbot_ctrl_led_s led_msg{};
@@ -60,10 +60,11 @@ int wbot_moto_test_main(int argc, char *argv[])
         // MOTO测试功能（仅当定义MOTO_TEST时编译）
         struct wbot_ctrl_moto_s moto_msg{};
         // 设置电机速度（根据需要调整）
-        for (int n = 0; n < 8; n++) {
-            moto_msg.speed[n] = 60;
-            moto_msg.direction[n] = cmd2;
-        }
+        // for (int n = 0; n < 8; n++) {
+            uint8_t index = cmd1 -1;
+            moto_msg.speed[index] = cmd2;
+            moto_msg.direction[index] = 0;
+        // }
         moto_msg.timestamp = hrt_absolute_time();
 
         // 发布MOTO消息
