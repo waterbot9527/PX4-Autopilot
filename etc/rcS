@@ -1,0 +1,256 @@
+#!/bin/sh
+
+# ===============================
+# rcS 启动脚本说明（中文）
+# 本文件用于 PX4 在树莓派/Posix 环境下启动各模块
+# 说明按“功能块”分段，方便快速理解与维护
+# ===============================
+
+# 运行策略：set +e 表示脚本中某条命令失败不会中断整个启动流程
+# 如需严格模式可改为 set -e（出错即退出）
+set +e
+# 调试开关：取消注释后会打印每条执行的命令（排查启动问题时用）
+#set -x
+
+
+# 命令别名：让脚本里能直接使用 param/commander/mavlink 等命令
+# 依赖 px4-alias.sh 将 px4- 前缀命令映射为简写
+# shellcheck disable=SC1091
+. px4-alias.sh
+
+# 搜索路径：后续会 source 其它 rc.* 文件
+PATH="$PATH:${R}etc/init.d-posix"
+
+#
+# 主启动脚本入口（树莓派/Posix 环境）
+#
+
+# 回放模式：如果是 ekf2 重放日志，走 rc.replay 后退出
+# shellcheck disable=SC2154
+if [ "$replay_mode" = "ekf2" ]
+then
+	. ${R}etc/init.d-posix/rc.replay
+	exit 0
+fi
+
+# 初始化脚本变量（日志、最小 shell、autostart 等）
+set VEHICLE_TYPE                none
+set LOGGER_ARGS                 ""
+set LOGGER_BUF                  1000
+
+set RUN_MINIMAL_SHELL           no
+
+# Autostart：稍后会用 param 设置为 60003（waterbot 机型）
+
+# 允许通过环境变量覆盖机型 ID（便于脚本外部指定）
+if [ -n "$PX4_SYS_AUTOSTART" ]
+then
+	echo "env SYS_AUTOSTART: ${PX4_SYS_AUTOSTART}"
+fi
+
+# 参数文件加载：读取 parameters.bson（及备份）
+set PARAM_FILE parameters.bson
+set PARAM_BACKUP_FILE parameters_backup.bson
+
+# 选择参数主文件并尝试导入
+param select $PARAM_FILE
+if [ -f $PARAM_FILE ]; then
+
+	if ! param import
+	then
+		echo "ERROR [init] param import failed"
+
+		bsondump $PARAM_FILE
+
+		# try to make a backup copy
+		cp $PARAM_FILE param_import_fail.bson
+
+		# try importing from backup file
+		if [ -f $PARAM_BACKUP_FILE ]
+		then
+			echo "[init] importing from parameter backup"
+
+			# dump current backup file contents for comparison
+			bsondump $PARAM_BACKUP_FILE
+
+			param import $PARAM_BACKUP_FILE
+
+			# overwrite invalid $PARAM_FILE with backup
+			cp $PARAM_BACKUP_FILE $PARAM_FILE
+		fi
+
+		param status
+	fi
+
+elif [ -f $PARAM_BACKUP_FILE ]; then
+	echo "ERROR [init] primary param file $PARAM_FILE unavailable, using backup $PARAM_BACKUP_FILE"
+	param import $PARAM_BACKUP_FILE
+fi
+
+# 设置参数备份文件路径
+param select-backup $PARAM_BACKUP_FILE
+
+# 强制机型：waterbot（60003）
+param set SYS_AUTOSTART 60003
+
+# 如果是最小 shell，则提前退出（不启动任何模块）
+[ $RUN_MINIMAL_SHELL = yes ] && exit 0
+
+# 读取实际机型参数值
+SYS_AUTOSTART=$(param show -q SYS_AUTOSTART)
+
+# SYS_AUTOSTART=0 表示不自动配置机型
+if [ "$SYS_AUTOSTART" -eq 0 ]
+then
+	set AUTOCNF no
+else
+	set AUTOCNF yes
+	param set SYS_AUTOCONFIG 1
+fi
+
+# 如果开启自动配置，重置非关键参数（避免旧配置污染）
+if param compare SYS_AUTOCONFIG 1
+then
+	# Reset params except Airframe, RC calibration, sensor calibration, flight modes, total flight time, and next flight UUID.
+	param reset_all SYS_AUTOSTART RC* CAL_* COM_FLTMODE* LND_FLIGHT* TC_* COM_FLIGHT*
+	set AUTOCNF yes
+fi
+
+# 允许通过环境变量设置参数：export PX4_PARAM_{name}={value}
+env | while IFS='=' read -r line; do
+  value=${line#*=}
+  name=${line%%=*}
+  case $name in
+    "PX4_PARAM_"*) param set "${name#PX4_PARAM_}" "$value" ;;
+  esac
+done
+
+
+# 解析机型脚本文件（airframes 目录下的 60003_*）
+autostart_file=''
+# shellcheck disable=SC2231
+for f in ${R}etc/init.d-posix/airframes/"$(param show -q SYS_AUTOSTART)"_*
+do
+	filename=$(basename "$f")
+	case "$filename" in
+		*\.*)
+			# ignore files that contain a dot (e.g. <vehicle>.post)
+			;;
+		*)
+			autostart_file="$f"
+			;;
+	esac
+done
+
+# 加载机型脚本（设置机型默认参数、控制分配等）
+if [ -e "$autostart_file" ]
+then
+	echo "autostart file found ($autostart_file)"
+	. "$autostart_file"
+
+else
+	echo "Error: no autostart file found ($autostart_file)"
+	exit 1
+fi
+
+# 用户覆盖参数（放在 autostart 之后，避免被 reset 或机型脚本覆盖）
+# Only set parameters that exist in px4_raspberrypi_default
+param set COM_RCL_EXCEPT 4
+param set CBRK_SUPPLY_CHK 894281
+
+# 无 SD 卡平台：禁用 SD 卡检查与日志
+param set COM_ARM_SDCARD 0
+param set SDLOG_MODE 0
+
+# 水下环境：放宽/关闭磁力计一致性检查
+param set COM_ARM_MAG_ANG 180
+param set COM_ARM_MAG_STR 0
+
+# 数据管理器（参数/日志等持久化存储）
+dataman start -r
+
+# WOUT_* 输出映射（电机/LED 等逻辑输出通道）
+# Use default parameter file location (don't override with param select)
+
+param set-default WOUT_FUNC1 402
+param set-default WOUT_FUNC2 403
+param set-default WOUT_FUNC3 404
+param set-default WOUT_FUNC4 405
+param set-default WOUT_FUNC5 406
+param set-default WOUT_FUNC6 407
+param set-default WOUT_FUNC7 408
+param set-default WOUT_FUNC8 409
+
+param set-default WOUT_MAX1 512
+param set-default WOUT_MIN1 0
+param set-default WOUT_MAX2 512
+param set-default WOUT_MIN2 0
+param set-default WOUT_MAX3 512
+param set-default WOUT_MIN3 0
+param set-default WOUT_MAX4 512
+param set-default WOUT_MIN4 0
+param set-default WOUT_MAX5 512
+param set-default WOUT_MIN5 0
+param set-default WOUT_MAX6 512
+param set-default WOUT_MIN6 0
+param set-default WOUT_MAX7 512
+param set-default WOUT_MIN7 0
+param set-default WOUT_MAX8 512
+param set-default WOUT_MIN8 0
+
+# IMU 校准参数（此处为固定值，若有真实校准应替换）
+param set CAL_ACC0_ID  14123200
+
+param set CAL_ACC0_XOFF 0.0
+param set CAL_ACC0_YOFF 0.0
+param set CAL_ACC0_ZOFF 0.0
+
+param set CAL_ACC0_XSCALE 1.0
+param set CAL_ACC0_YSCALE 1.0
+param set CAL_ACC0_ZSCALE 1.0
+
+param set-default CAL_GYRO0_ID 14123300
+param set-default CAL_GYRO0_PRIO 75
+param set-default CAL_GYRO0_ROT 0
+param set-default CAL_GYRO0_XOFF 0.0
+param set-default CAL_GYRO0_YOFF 0.0
+param set-default CAL_GYRO0_ZOFF 0.0
+
+# 磁力计校准：不在脚本里写死偏移量
+# 需要时用 commander calibrate mag 做真实校准
+param set-default CAL_MAG0_ID 14123400
+param set-default CAL_MAG0_PRIO 75
+param set-default CAL_MAG0_ROT 0
+
+# MAVLink 连接配置（与地面站通信）
+#. px4-rc.mavlink
+if [ -z "$SERVER_IP" ]; then
+
+  #export SERVER_IP=192.168.10.104
+  export SERVER_IP=192.168.10.101
+
+fi
+
+echo "rcS sees SERVER_IP=${SERVER_IP}" >/tmp/px4_server_ip.log
+
+mavlink start -x -u 14556 -r 1000000 -p -t ${SERVER_IP}
+#mavlink start -u 14556 -r 1000000 -o 14550 -t 192.168.10.111 -x -f
+
+# 通知 MAVLink 启动完成
+mavlink boot_complete
+
+# 启动核心模块（日志、负载监控、驱动、传感器、EKF、混控、指挥器）
+logger start -b $LOGGER_BUF $LOGGER_ARGS
+load_mon start
+# IMU: X朝后、Y朝左、Z朝下 => ROTATION_YAW_180 (值=4)
+# 磁力计方向若与IMU不同，可用 -m 单独设置（默认同 -r）
+# -i 0 表示仅发布 dev0 的 IMU；-i 1 仅发布 dev1；-i -1 全发布（默认）
+wbot_main_driver start -r 4 -m 0 -d 0 -i 0
+sensors start
+# 禁用磁力计融合（地磁异常时使用，Yaw会缓慢漂移）
+param set EKF2_MAG_TYPE 0
+ekf2 start
+wbot_mix_out start
+commander start
+
+

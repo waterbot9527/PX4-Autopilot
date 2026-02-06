@@ -97,7 +97,10 @@ public :
         if ( board_id >= MAX_BOARD_CNT )
             return -1;
 
-        // TODO
+        // TODO: build command buffer here when needed
+        (void)input_buffer;
+        (void)max_input_len;
+        return -1;
     }
 
 

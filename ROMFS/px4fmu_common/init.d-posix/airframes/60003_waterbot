@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# @name Unknown UUV (USB MCU)
+#
+# @type UUV
+#
+# @maintainer Waterbot Team
+#
+
+# Source PX4 parameters and configuration
+. ${R}/etc/init.d/rc.uuv_defaults
+
+# Vehicle type / control allocation (minimal defaults)
+param set-default CA_AIRFRAME 7
+param set-default CA_METHOD 0
+param set-default MAV_TYPE 12
+
+# We do not use PWM/ESCs on this platform (USB MCU handles motors)
+param set-default COM_ARM_CHK_ESCS 0
+param set-default FD_ESCS_EN 0
+
+# This airframe intentionally keeps parameters minimal.
+# Additional parameters (WOUT_*, COM_ARM_SDCARD, MAG checks, etc.)
+# are configured in rcS for this platform.

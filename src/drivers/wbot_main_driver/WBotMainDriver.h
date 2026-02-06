@@ -40,6 +40,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <array>
 
 
 #include <px4_platform_common/module.h>
@@ -48,6 +49,7 @@
 #include <lib/conversion/rotation.h>
 
 #include <uORB/Subscription.hpp>  // 添加这个头文件以支持uORB::Subscription
+#include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
@@ -55,6 +57,7 @@
 #include <uORB/topics/sensor_gyro.h>
 #include <uORB/topics/vehicle_attitude.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/water_depth.h>
 
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
@@ -64,7 +67,7 @@
 class WBotMainDriver : public ModuleBase<WBotMainDriver>, public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
-	WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id);
+	WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_value, uint8_t max_dev_id, int8_t imu_publish_dev);
 	~WBotMainDriver() override;
 
 	/** @see ModuleBase */
@@ -84,8 +87,10 @@ public:
 	uint32_t _max_dev_id;
 
 private:
-	orb_advert_t _water_press_pub = nullptr;
-	orb_advert_t _water_temp_pub = nullptr;
+	std::array<uORB::PublicationMulti<water_depth_s>, TOTAL_SERIAL_COUNT> _water_depth_pub{{
+		uORB::PublicationMulti<water_depth_s>(ORB_ID(water_depth)),
+		uORB::PublicationMulti<water_depth_s>(ORB_ID(water_depth))
+	}}; // 水深数据发布句柄
 
 	void Run() override;
 
@@ -102,7 +107,9 @@ private:
 	// 新增函数用于打印传感器数据
 	void printSensorData();
 
-	Rotation rotation{Rotation::ROTATION_NONE};
+	Rotation _rotation_imu{Rotation::ROTATION_NONE};
+	Rotation _rotation_mag{Rotation::ROTATION_NONE};
+	int8_t _imu_publish_dev{-1}; // -1: publish all, 0/1: publish only selected dev
 
 	// 添加用于监听传感器数据和姿态的订阅者
 	uORB::Subscription _sensor_accel_sub{ORB_ID(sensor_accel)};
@@ -127,7 +134,7 @@ private:
 	bool _device_connected[TOTAL_SERIAL_COUNT] = {false, false};
 	hrt_abstime _last_disconnect_time[TOTAL_SERIAL_COUNT] = {0, 0};
 	int _disconnect_count[TOTAL_SERIAL_COUNT] = {0, 0};
-	static constexpr uint32_t RECONNECT_INTERVAL_US = 60000000; // 5秒重连间隔
+	static constexpr uint32_t RECONNECT_INTERVAL_US = 600000000; // 5秒重连间隔
 	static constexpr int MAX_DISCONNECT_COUNT = 5; // 最大断开次数
 
 	// 添加辅助函数

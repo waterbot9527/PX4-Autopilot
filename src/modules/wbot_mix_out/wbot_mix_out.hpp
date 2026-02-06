@@ -58,8 +58,6 @@ private:
 	orb_advert_t _moto_pub;
 	struct wbot_ctrl_moto_s _moto_msg{};
 	struct wbot_ctrl_led_s _led_msg{};
-	struct wbot_ctrl_led_s _led_msg_for_publish{};
-
 	private:
     struct ButtonState {
         uint16_t led_increase : 1;    // bit 0

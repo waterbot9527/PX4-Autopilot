@@ -52,9 +52,12 @@
 #include <uORB/topics/sensor_accel_fifo.h>
 #include <uORB/topics/sensor_gyro_fifo.h>
 #include <uORB/topics/sensor_mag.h>
-
+#include <uORB/topics/water_depth.h>
 
 using namespace time_literals;
+
+// Local guard for packet buffer size (must match CMD_BUF_SIZE)
+static constexpr int kCmdBufSize = 256;
 
 /*
 查找所有的 usb 串口设备
@@ -66,7 +69,7 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 
 	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
 	const char* dev0 =  "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -159,7 +162,7 @@ static int read_full_packet(int serial_fd, uint8_t *data)
 
 	if (data[0] != 0x5a || data[1] != 0x5b || data[2] != 0x5c || data[3] != 0x5d )
 	{
-		printf("fuck1 = %x %x %x %x \n", data[0], data[1], data[2], data[3]);
+		printf("bad header = %x %x %x %x \n", data[0], data[1], data[2], data[3]);
 		return -4;
 	}
 
@@ -167,6 +170,10 @@ static int read_full_packet(int serial_fd, uint8_t *data)
 	if ( ret != 1 )
 		return -5;
 	uint8_t total_length = data[4];
+	// basic length guard to avoid buffer overflow
+	if (total_length < 5 || total_length > kCmdBufSize) {
+		return -7;
+	}
 
 	uint8_t left_length = total_length - 5 ;
 	do {
@@ -228,21 +235,34 @@ static int open_serial_fd(const char *serial_port)
 	return serial_fd;
 }
 
-WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
+WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_value, uint8_t max_dev_id,
+					 int8_t imu_publish_dev) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::hp_default),
-	rotation(static_cast<Rotation>(rotation_value))
+	_rotation_imu(static_cast<Rotation>(imu_rotation_value)),
+	_rotation_mag(static_cast<Rotation>(mag_rotation_value)),
+	_imu_publish_dev(imu_publish_dev)
 {
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
 	this->_max_dev_id = max_dev_id;
+	if (_imu_publish_dev >= 0) {
+		if (_imu_publish_dev >= static_cast<int8_t>(TOTAL_SERIAL_COUNT)) {
+			PX4_WARN("imu_publish_dev=%d out of range, fallback to all", _imu_publish_dev);
+			_imu_publish_dev = -1;
+
+		} else if (_imu_publish_dev > static_cast<int8_t>(_max_dev_id)) {
+			// ensure selected dev is initialized even if -d was smaller
+			_max_dev_id = static_cast<uint32_t>(_imu_publish_dev);
+		}
+	}
 
 	for(uint32_t dev_id = 0; dev_id <= max_dev_id; dev_id++)
 	{
-		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, rotation);
-		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, rotation);
-		_px4_mag[dev_id] = new PX4Magnetometer(14123400 + dev_id, rotation);
+		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, _rotation_imu);
+		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, _rotation_imu);
+		_px4_mag[dev_id] = new PX4Magnetometer(14123400 + dev_id, _rotation_mag);
 
 
 		_px4_accel[dev_id]->set_scale(0.061f * CONSTANTS_ONE_G/1000); // 0.061 参考 lsm6dsv16x.pdf 的 Table 3
@@ -262,6 +282,16 @@ WBotMainDriver::WBotMainDriver(uint8_t rotation_value, uint8_t max_dev_id) :
 WBotMainDriver::~WBotMainDriver()
 {
 	ScheduleClear();
+
+	// release allocated sensor objects
+	for (uint32_t dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++) {
+		delete _px4_accel[dev_id];
+		_px4_accel[dev_id] = nullptr;
+		delete _px4_gyro[dev_id];
+		_px4_gyro[dev_id] = nullptr;
+		delete _px4_mag[dev_id];
+		_px4_mag[dev_id] = nullptr;
+	}
 }
 
 int WBotMainDriver::Start()
@@ -271,6 +301,11 @@ int WBotMainDriver::Start()
 	PX4_INFO("list tty ret=%d\n",ret);
 	for (uint32_t n = 0; n < TOTAL_SERIAL_COUNT; n++)
 	{
+		// skip empty device slots
+		if (this->_serial_name[n][0] == '\0') {
+			_device_connected[n] = false;
+			continue;
+		}
 
 		this->_serial_fd[n] = open_serial_fd(this->_serial_name[n]);
 		if ( this->_serial_fd[n] < 0 )
@@ -286,7 +321,7 @@ int WBotMainDriver::Start()
 
 	}
 
-	ScheduleOnInterval(5000_us); // 2ms interval
+	ScheduleOnInterval(5000_us); // 5ms interval
 	return PX4_OK;
 }
 
@@ -600,60 +635,58 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 
 bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 {
-	// TODO 根据 dev id 发送到不同的 topic
-	if ( len != 8 )
-	{
-		PX4_INFO("ms5837_data ! = 8,len =  %d ",len);
+	if (len != 8) {
+		PX4_INFO("ms5837_data != 8, len = %d", len);
 		return false;
 	}
 
+	uint32_t pressure_raw = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24);
+	uint32_t temperature_raw = data[4] | (data[5] << 8) | (data[6] << 16) | (data[7] << 24);
 
-	uint32_t pressure_raw = data[0] | (data[1]<<8) | (data[2]<<16) | (data[3]<<24);
-	uint32_t temperature_raw = data[4] | (data[5]<<8) | (data[6]<<16) | (data[7]<<24);
+	float temperature_celsius = temperature_raw / 100.0;
+	float pressure_mbar = pressure_raw / 10.0;
+	const float pressure_pa = pressure_mbar * 100.0f;
 
-	float temperature_celsius 	= temperature_raw / 100.0;
-	float pressure_mbar   		= pressure_raw / 10.0;
-	PX4_DEBUG("temperature = %f  pressure_mbar = %f \n", (double)temperature_celsius,(double) pressure_mbar);
+	PX4_DEBUG("temperature = %f, pressure_mbar = %f", (double)temperature_celsius, (double)pressure_mbar);
 
-	(void)temperature_celsius;
-	(void)pressure_mbar;
-	//todo： publish data
+	// 由压力计算淡水深度并发布（每个MCU独立实例）
+	constexpr float kFreshwaterDensity = 1000.0f;   // kg/m^3
+	constexpr float kGravity = 9.80665f;            // m/s^2
+	constexpr float kSurfacePressurePa = 1013.25f * 100.0f; // Pa
 
-	static uint8_t num;
-	if ((num++%2) == 0 )
-	{
-		debug_key_value_s pressure_mbar_msg ;
-		snprintf(pressure_mbar_msg.key, 10, "x");
-		pressure_mbar_msg.timestamp = _now;
-		pressure_mbar_msg.value = pressure_mbar;
-
-		if ( _water_press_pub == nullptr)
-			_water_press_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_mbar_msg);
-		else
-			orb_publish(ORB_ID(debug_key_value), _water_press_pub, &pressure_mbar_msg);
+	float depth_m = (pressure_pa - kSurfacePressurePa) / (kFreshwaterDensity * kGravity);
+	if (depth_m < 0.0f) {
+		depth_m = 0.0f;
 	}
-	else
-	{
-		debug_key_value_s pressure_temp_msg ;
-		snprintf(pressure_temp_msg.key, 10, "z");
-		pressure_temp_msg.timestamp = _now;
-		pressure_temp_msg.value = temperature_celsius;
-		if ( _water_temp_pub == nullptr)
-			_water_temp_pub = orb_advertise(ORB_ID(debug_key_value), &pressure_temp_msg);
-		else
-			orb_publish(ORB_ID(debug_key_value), _water_temp_pub, &pressure_temp_msg);
+
+	water_depth_s depth_data{};
+	depth_data.timestamp = _now;
+	depth_data.device_id = 14123500 + dev_id;
+	depth_data.pressure_mbar = pressure_mbar;
+	depth_data.temperature_celsius = temperature_celsius;
+	depth_data.depth_m = depth_m;
+
+	// publish per MCU instance
+	if (dev_id < TOTAL_SERIAL_COUNT) {
+		_water_depth_pub[dev_id].publish(depth_data);
 	}
+
 
 	return true;
 }
 
-
 bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 {
 	uint32_t cnt = len / 7;
-	if ( len % 7 != 0 )
-	{
-		return false ;
+	if (len % 7 != 0) {
+		return false;
+	}
+
+	// 防止 MCU 发来的 FIFO 样本数超过 uORB 消息缓冲区上限，避免数组越界
+	const uint32_t max_samples = sensor_accel_fifo_s::MAX_SAMPLES;
+	if (cnt > max_samples) {
+		PX4_WARN("imu fifo samples (%u) > MAX_SAMPLES (%u), clamping", cnt, max_samples);
+		cnt = max_samples;
 	}
 
 	int16_t *datax, *datay, *dataz;
@@ -666,6 +699,8 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 	sensor_gyro_fifo_s gyro{};
 	gyro.timestamp_sample = _now;
 	gyro.samples = 0;
+
+	float temperature_celsius = NAN;  // 存储从 IMU 数据中解析的温度
 
 
 	for (uint32_t n=0; n<cnt; n++)
@@ -683,10 +718,10 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			// float tz = lsm6dsv16x_from_fs2_to_mg(*dataz);
 			// printf("test accel %f %f %f\n", (double)tx, (double)ty, (double)tz);
 
-			// 处理加速度计数据
+			// 处理加速度计数据（原始轴，旋转由PX4Accelerometer处理）
 			accel.x[accel.samples] = *datax;
 			accel.y[accel.samples] = *datay;
-			accel.z[accel.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
+			accel.z[accel.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : *dataz;
 			accel.samples++;
 
 			break;
@@ -696,14 +731,16 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			int32_t *ts = (int32_t *)&f_data.data[0];
 			float_t imu_ts = lsm6dsv16x_from_lsb_to_nsec(*ts)/1000;
 			(void)imu_ts;
+			// 注：如果需要从 FIFO timestamp 中提取温度，在此处理
+			// 当前做法：如果 MCU 单独发送温度数据，应在其他消息中处理
 			break;
 		}
 		case 1: //LSM6DSV16X_GY_NC_TAG:
 		{
-			// 处理陀螺仪数据
+			// 处理陀螺仪数据（原始轴，旋转由PX4Gyroscope处理）
 			gyro.x[gyro.samples] = *datax;
 			gyro.y[gyro.samples] = *datay;
-			gyro.z[gyro.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : -(*dataz);
+			gyro.z[gyro.samples] = ((*dataz) == INT16_MIN) ? INT16_MAX : *dataz;
 			gyro.samples++;
 
           		break;
@@ -720,7 +757,8 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 			if ( dev_id <= this->_max_dev_id)
 			{
-				this->_px4_mag[dev_id]->update(this->_now, *datax, *datay, *dataz);
+				// LIS2MDL: X前、Y左、Z下 -> 机体系X前、Y右、Z下，需要Y取反
+				this->_px4_mag[dev_id]->update(this->_now, *datax, -(*datay), *dataz);
 			}
 
 			break;
@@ -735,13 +773,16 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 
 	}
 
-	if (dev_id <= this->_max_dev_id)
+	if (dev_id <= this->_max_dev_id
+	    && (_imu_publish_dev < 0 || dev_id == static_cast<uint32_t>(_imu_publish_dev)))
 	{
 		if (accel.samples > 0) {
+			_px4_accel[dev_id]->set_temperature(temperature_celsius);
 			_px4_accel[dev_id]->updateFIFO(accel);
 		}
 
 		if (gyro.samples > 0) {
+			_px4_gyro[dev_id]->set_temperature(temperature_celsius);
 			_px4_gyro[dev_id]->updateFIFO(gyro);
 		}
 
@@ -771,19 +812,27 @@ void WBotMainDriver::Run()
 
 int WBotMainDriver::task_spawn(int argc, char *argv[])
 {
-	int n_value = 0;
+	int imu_rotation_value = 0;
+	int mag_rotation_value = -1;
 	int dev_value = 1;
+	int imu_publish_dev = -1;
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
 
-	while ((ch = px4_getopt(argc, argv, "r:d:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "r:m:d:i:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'd':
 			dev_value = atoi(myoptarg);
 			break;
+		case 'i':
+			imu_publish_dev = atoi(myoptarg);
+			break;
 		case 'r':
-			n_value = atoi(myoptarg);
+			imu_rotation_value = atoi(myoptarg);
+			break;
+		case 'm':
+			mag_rotation_value = atoi(myoptarg);
 			break;
 
 		default:
@@ -792,7 +841,12 @@ int WBotMainDriver::task_spawn(int argc, char *argv[])
 		}
 	}
 
-	WBotMainDriver *instance = new WBotMainDriver(n_value, dev_value);
+	if (mag_rotation_value < 0) {
+		mag_rotation_value = imu_rotation_value;
+	}
+
+	WBotMainDriver *instance = new WBotMainDriver(imu_rotation_value, mag_rotation_value, dev_value,
+						   static_cast<int8_t>(imu_publish_dev));
 
 	if (!instance) {
 		PX4_ERR("alloc failed");
@@ -849,8 +903,10 @@ Water Robot Main Driver module.
 
 	PRINT_MODULE_USAGE_NAME("wbot_main_driver", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
-	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "rotation N value", true);
+	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "IMU rotation N value", true);
+	PRINT_MODULE_USAGE_PARAM_INT('m', 0, 0, 100, "Mag rotation N value (default: same as -r)", true);
 	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
+	PRINT_MODULE_USAGE_PARAM_INT('i', -1, -1, 1, "IMU publish dev id (-1: all, 0/1: only one)", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("print_data", "Print current sensor data (accel, gyro, attitude) and calibration params");
 	PRINT_MODULE_USAGE_COMMAND("pd");  // Short alias for print_data
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();

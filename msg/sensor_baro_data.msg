@@ -1,0 +1,4 @@
+uint64 timestamp
+uint8 index
+float32 pressure_mbar
+float32 temperature_celsius

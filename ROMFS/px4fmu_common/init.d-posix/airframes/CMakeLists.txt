@@ -116,6 +116,7 @@ px4_add_romfs_files(
 	50000_gz_rover_differential
 
 	60002_gz_uuv_bluerov2_heavy
+	60003_waterbot
 
 	70000_gz_atmos
 

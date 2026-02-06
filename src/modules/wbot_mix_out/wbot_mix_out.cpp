@@ -161,15 +161,15 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	};
 #else
 	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
-		//{主推1，上浮下潜1，主推2，上浮下潜2，左右转，上浮下潜，俯仰1，俯仰2}
-		{ -0.0, -1.0, +0.0, +1.0, +0.0, -1.0, +0.0, +0.0 }, /* 摇杆2-X-R */
-		{ +0.0, +1.0, -0.0, -1.0, +0.0, +1.0, +0.0, +0.0 }, /* 摇杆2-X-L */
-		{ +0.0, +0.0, +0.0, +0.0, -0.0, +0.0, -1.0, +1.0 }, /* 摇杆2-Y-U */
-		{ +0.0, +0.0, -0.0, -0.0, +0.0, +0.0, +1.0, -1.0 }, /* 摇杆2-Y-D */
-		{ +1.0, +0.0, -1.0, +0.0, +0.0, +0.0, +0.0, +0.0 }, /* 摇杆1-Y-U */
-		{ -1.0, +0.0, +1.0, -0.0, +0.0, +0.0, -0.0, -0.0 }, /* 摇杆1-Y-D */
-		{ +0.0, -0.0, +0.0, +0.0, +1.0, +0.0, -0.0, +0.0 }, /* 摇杆1-X-R */
-		{ +0.0, +0.0, +0.0, +0.0, -1.0, -0.0, +0.0, +0.0 }  /* 摇杆1-X-L */
+		//{主推1，上浮下潜1，主推2，上浮下潜2，左右转，俯仰1，上浮下潜，俯仰2}
+		{ -0.0,	-0.0, +0.0, +0.0, +1.0, -0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+		{ +0.0, +0.0, -0.0, -0.0, -1.0, +0.0, +0.0, +0.0 }, /* 摇杆1-X-L */
+		{ +1.0, +0.0, +1.0, +0.0, -0.0, +0.0, -0.0, +0.0 }, /* 摇杆1-Y-U */
+		{ -1.0, +0.0, -1.0, -0.0, +0.0, +0.0, +0.0, -0.0 }, /* 摇杆1-Y-D */
+		{ +0.0, +0.0, -0.0, +0.0, +0.0, -1.0, +0.0, +1.0 }, /* 摇杆2-Y-U */
+		{ -0.0, +0.0, +0.0, -0.0, +0.0, +1.0, -0.0, -1.0 }, /* 摇杆2-Y-D */
+		{ +0.0, -1.0, +0.0, -1.0, +0.0, +0.0, -0.0, +0.0 }, /* 摇杆2-X-R */
+		{ +0.0, +1.0, +0.0, +1.0, -0.0, -0.0, +0.0, +0.0 }  /* 摇杆2-X-L */
 	};
 #endif // MOTOR_TEST
 
@@ -287,21 +287,14 @@ void WBotMixOut::handle_led_brightness_control(int8_t change_value) {
     _led_msg.light_value = new_value;
     raspberry_pwm = _led_msg.light_value / 255.0;
     set_raspberry_led(raspberry_pwm);
-    //前后灯方案不一样，所以亮度需要调整
-    memcpy(&_led_msg_for_publish,&_led_msg,sizeof(wbot_ctrl_led_s));
-    if (_led_msg_for_publish.light_value >0 && _led_msg_for_publish.light_value < (240-48))
-    {
-	_led_msg_for_publish.light_value+=36;
-    }
-
-    _led_msg.timestamp = hrt_absolute_time();
-    if (_led_pub != nullptr) {
-        orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg_for_publish);
-	PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg.light_value);
-        PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg_for_publish.light_value);
-    } else {
-        PX4_ERR("Failed to publish wbot_ctrl_led: publisher not inited");
-    }
+	// 前后灯型号一致，直接发布 Raspberry LED 的亮度值
+	_led_msg.timestamp = hrt_absolute_time();
+	if (_led_pub != nullptr) {
+		orb_publish(ORB_ID(wbot_ctrl_led), _led_pub, &_led_msg);
+		PX4_INFO("Published wbot_led message (LED brightness: %d)", _led_msg.light_value);
+	} else {
+		PX4_ERR("Failed to publish wbot_ctrl_led: publisher not inited");
+	}
 }
 
 void WBotMixOut::handle_reboot_mcu()
