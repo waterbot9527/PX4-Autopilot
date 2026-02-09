@@ -31,7 +31,7 @@ listener vehicle_attitude  // 查看欧拉角（Roll, Pitch, Yaw）
 或者使用wbot_main_driver命令：
 
 ```
-wbot_main_driver pd
+wbot_main_driver pd、listener vehicle_attitude
 ```
 
 你可能会看到类似以下的输出：
@@ -70,7 +70,7 @@ param show SENS_BOARD_ROT
 
 重新运行检查命令：
 ```
-wbot_main_driver pd
+wbot_main_driver pd、listener vehicle_attitude
 ```
 
 重点关注 `vehicle_attitude` 的输出：
@@ -87,9 +87,13 @@ wbot_main_driver pd
 ## 第四步：创建自定义旋转校准（如果需要）
 
 如果你的传感器安装存在较大偏差（Roll或Pitch偏离0度超过5度），你可以创建一个自定义旋转校准值。
+如步：
+param set CAL_ACC0_ROT 41
+param set CAL_GYRO0_ROT 41
 
 ### 添加自定义旋转值
-在PX4源代码的 `src/lib/conversion/rotation.h` 文件中，有一个旋转查找表：
+在PX4源代码的 `src/lib/conversion/rotation.h` 文件中，有一个旋转查找表，找到自定义的参数param set CAL_ACC0_ROT 41
+param set CAL_GYRO0_ROT 41所对应的旋转值进行更改/：
 
 ```
 static constexpr struct {
@@ -109,9 +113,10 @@ static constexpr struct {
 例如，如果测量到 Roll=-3.95°, Pitch=-0.57°，则添加：
 ```
 {  4,   1,   0 },  // 自定义校准旋转，约等于 -(-3.95), -(-0.57), 0
+可以直接在本机电脑中使用sensor_calibration_assistant.py，来进行计算需要更改多少，并添加到rotation.h中
 ```
 
-注意：这个步骤需要修改源代码并重新编译固件，对于大多数用户来说，可以跳过这一步，直接进行自动校准。
+注意：这个步骤需要修改源代码并重新编译固件，同时修改后的数据需要等待ekf2解算一段时间，才能得到正确的结果。
 
 ## 第五步：执行传感器自动校准
 
@@ -125,7 +130,7 @@ commander calibrate gyro
 ```
 commander calibrate accel
 ```
-按照提示，将飞行器放置在6个不同的方向（每个方向的底部朝下），每个方向保持稳定直到校准提示继续。目标是让水平放置时sensor_accel的x和y接近0，z接近9.8m/s²。
+按照提示，将飞行器放置在6个不同的方向（每个方向的底部朝下），每个方向保持稳定直到校准提示继续。目标是让水平放置时sensor_accel的x和y接近0，z接近9.8m/s²。如果校准时存在错误，如常见的预期传感器的旋转方向相反，就可以尝试更改param set SENS_BOARD_ROT参数，需要具体的角度配置则在rotation.h中进行配置更改。
 
 ### 磁力计校准（如果传感器存在且需要）
 ```
@@ -169,3 +174,7 @@ A: 可能需要重新检查传感器安装，或考虑创建自定义旋转校�
 
 - 确保校准环境没有磁性干扰
 - 校准后建议重启飞行器以确保参数完全生效
+param set CAL_ACC0_ROT 41
+param set CAL_GYRO0_ROT 41
+
+
