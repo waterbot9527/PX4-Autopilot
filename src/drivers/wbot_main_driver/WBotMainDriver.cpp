@@ -68,8 +68,8 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
 	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
-	const char* dev0 =  "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
+	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
@@ -247,7 +247,10 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
 	this->_max_dev_id = max_dev_id;
-	if (_imu_publish_dev >= 0) {
+	if (_imu_publish_dev == -2) {
+		PX4_INFO("IMU publish disabled (-i -2)");
+
+	} else if (_imu_publish_dev >= 0) {
 		if (_imu_publish_dev >= static_cast<int8_t>(TOTAL_SERIAL_COUNT)) {
 			PX4_WARN("imu_publish_dev=%d out of range, fallback to all", _imu_publish_dev);
 			_imu_publish_dev = -1;
@@ -652,7 +655,7 @@ bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t l
 	// 由压力计算淡水深度并发布（每个MCU独立实例）
 	constexpr float kFreshwaterDensity = 1000.0f;   // kg/m^3
 	constexpr float kGravity = 9.80665f;            // m/s^2
-	constexpr float kSurfacePressurePa = 1013.25f * 100.0f; // Pa
+	constexpr float kSurfacePressurePa = 1020.25f * 100.0f; // Pa
 
 	float depth_m = (pressure_pa - kSurfacePressurePa) / (kFreshwaterDensity * kGravity);
 	if (depth_m < 0.0f) {
@@ -755,11 +758,7 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
 			*/
 
-			if ( dev_id <= this->_max_dev_id)
-			{
-				// LIS2MDL: X前、Y左、Z下 -> 机体系X前、Y右、Z下，需要Y取反
-				this->_px4_mag[dev_id]->update(this->_now, *datax, -(*datay), *dataz);
-			}
+			// 磁力计发布已禁用（由 LSM6DSV16X 驱动发布磁力计数据）
 
 			break;
 		}
@@ -771,6 +770,10 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			break;
 		}
 
+	}
+
+	if (_imu_publish_dev == -2) {
+		return true;
 	}
 
 	if (dev_id <= this->_max_dev_id
@@ -906,7 +909,7 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "IMU rotation N value", true);
 	PRINT_MODULE_USAGE_PARAM_INT('m', 0, 0, 100, "Mag rotation N value (default: same as -r)", true);
 	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
-	PRINT_MODULE_USAGE_PARAM_INT('i', -1, -1, 1, "IMU publish dev id (-1: all, 0/1: only one)", true);
+	PRINT_MODULE_USAGE_PARAM_INT('i', -2, -2, 1, "IMU publish dev id (-2: disable, -1: all, 0/1: only one)", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("print_data", "Print current sensor data (accel, gyro, attitude) and calibration params");
 	PRINT_MODULE_USAGE_COMMAND("pd");  // Short alias for print_data
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();

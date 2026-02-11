@@ -1431,6 +1431,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("CAMERA_IMAGE_CAPTURED", unlimited_rate);
 		configure_stream_local("CURRENT_MODE", 0.5f);
 		configure_stream_local("DISTANCE_SENSOR", 0.5f);
+		configure_stream_local("WBOT_WATER_DEPTH", 1.0f);
 		configure_stream_local("EFI_STATUS", 2.0f);
 		configure_stream_local("ESC_INFO", 1.0f);
 		configure_stream_local("ESC_STATUS", 1.0f);
@@ -1493,6 +1494,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("ATTITUDE", 100.0f);
 		configure_stream_local("ALTITUDE", 10.0f);
 		configure_stream_local("DISTANCE_SENSOR", 10.0f);
+		configure_stream_local("WBOT_WATER_DEPTH", 1.0f);
 		configure_stream_local("ESC_INFO", 10.0f);
 		configure_stream_local("ESC_STATUS", 10.0f);
 		configure_stream_local("MOUNT_ORIENTATION", 10.0f);

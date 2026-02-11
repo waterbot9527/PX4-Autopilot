@@ -19,7 +19,7 @@ extern "C" int lsm6dsv16x_main(int argc, char *argv[])
     using ThisDriver = LSM6DSV16X;
     BusCLIArguments cli{true, false};  // 启用I2C，禁用SPI
     cli.requested_bus = 1; // I2C-1
-    cli.default_i2c_frequency = 1000;  // I2C默认频率400kHz
+    cli.default_i2c_frequency = 400000;  // I2C频率4MHz (快速模式)
     cli.i2c_address = 0x6B;  // 默认I2C地址
     cli.bus_option = I2CSPIBusOption::I2CInternal;
     PX4_INFO("IMU START\n");

@@ -109,7 +109,7 @@ private:
 
 	Rotation _rotation_imu{Rotation::ROTATION_NONE};
 	Rotation _rotation_mag{Rotation::ROTATION_NONE};
-	int8_t _imu_publish_dev{-1}; // -1: publish all, 0/1: publish only selected dev
+	int8_t _imu_publish_dev{-1}; // -2: disable publish, -1: publish all, 0/1: publish only selected dev
 
 	// 添加用于监听传感器数据和姿态的订阅者
 	uORB::Subscription _sensor_accel_sub{ORB_ID(sensor_accel)};
@@ -134,7 +134,7 @@ private:
 	bool _device_connected[TOTAL_SERIAL_COUNT] = {false, false};
 	hrt_abstime _last_disconnect_time[TOTAL_SERIAL_COUNT] = {0, 0};
 	int _disconnect_count[TOTAL_SERIAL_COUNT] = {0, 0};
-	static constexpr uint32_t RECONNECT_INTERVAL_US = 600000000; // 5秒重连间隔
+	static constexpr uint32_t RECONNECT_INTERVAL_US = 5000000; // 5秒重连间隔
 	static constexpr int MAX_DISCONNECT_COUNT = 5; // 最大断开次数
 
 	// 添加辅助函数

@@ -198,13 +198,11 @@ param set-default WOUT_MIN7 0
 param set-default WOUT_MAX8 512
 param set-default WOUT_MIN8 0
 
-# IMU 校准参数（此处为固定值，若有真实校准应替换）
-param set CAL_ACC0_ID  14123200
-
+# IMU 校准参数：使用 wbot_main_driver 的 IMU (device_id: 14123200/14123300)
+param set CAL_ACC0_ID 14123200
 param set CAL_ACC0_XOFF 0.0
 param set CAL_ACC0_YOFF 0.0
 param set CAL_ACC0_ZOFF 0.0
-
 param set CAL_ACC0_XSCALE 1.0
 param set CAL_ACC0_YSCALE 1.0
 param set CAL_ACC0_ZSCALE 1.0
@@ -216,9 +214,9 @@ param set-default CAL_GYRO0_XOFF 0.0
 param set-default CAL_GYRO0_YOFF 0.0
 param set-default CAL_GYRO0_ZOFF 0.0
 
-# 磁力计校准：不在脚本里写死偏移量
-# 需要时用 commander calibrate mag 做真实校准
-param set-default CAL_MAG0_ID 14123400
+# 磁力计校准：使用 LSM6DSV16X 的磁力计 (device_id: 15624969)
+# 注意：EKF2_MAG_TYPE=0 禁用了磁融合，所以这个参数不影响导航
+param set-default CAL_MAG0_ID 15624969
 param set-default CAL_MAG0_PRIO 75
 param set-default CAL_MAG0_ROT 0
 
@@ -242,14 +240,21 @@ mavlink boot_complete
 # 启动核心模块（日志、负载监控、驱动、传感器、EKF、混控、指挥器）
 logger start -b $LOGGER_BUF $LOGGER_ARGS
 load_mon start
-# IMU: X朝后、Y朝左、Z朝下 => ROTATION_YAW_180 (值=4)
-# 磁力计方向若与IMU不同，可用 -m 单独设置（默认同 -r）
-# -i 0 表示仅发布 dev0 的 IMU；-i 1 仅发布 dev1；-i -1 全发布（默认）
+# IMU 来自 wbot_main_driver：X朝后、Y朝左、Z朝下 => ROTATION_YAW_180 (值=4)
+# -i 0 表示仅发布 dev0 的 IMU（14123200/14123300）
+batt_smbus start -I -b 0
 wbot_main_driver start -r 4 -m 0 -d 0 -i 0
+# 磁力计来自 LSM6DSV16X（I2C地址 0x6B，device_id 15624969）
+# 虽然它也会发布 IMU，但通过优先级控制，EKF2 只用 wbot_main_driver 的 IMU
+lsm6dsv16x start -R 4
+# 启动 MS5837 气压计驱动（I2C）
+ms5837 start
 sensors start
 # 禁用磁力计融合（地磁异常时使用，Yaw会缓慢漂移）
-param set EKF2_MAG_TYPE 0
+# param set EKF2_MAG_TYPE 0
+# 跳过罗盘检查（因为磁融合已禁用）
 ekf2 start
+manual_control start
 wbot_mix_out start
 commander start
 

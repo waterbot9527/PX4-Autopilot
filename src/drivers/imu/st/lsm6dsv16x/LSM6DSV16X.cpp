@@ -33,6 +33,15 @@ LSM6DSV16X::LSM6DSV16X(const I2CSPIDriverConfig &config) :
     memset(&_accel_fifo_data, 0, sizeof(_accel_fifo_data));
     memset(&_gyro_fifo_data, 0, sizeof(_gyro_fifo_data));
     memset(&_mag_data, 0, sizeof(_mag_data));
+
+    // 传感器标定：与 WBotMainDriver 一致
+    _px4_accel.set_scale(0.061f * CONSTANTS_ONE_G / 1000.0f); // 0.061 mg/LSB (±2g)
+    _px4_accel.set_range(2.f * CONSTANTS_ONE_G);
+
+    _px4_gyro.set_scale(math::radians(35.f / 1000.f)); // 35 mdps/LSB
+    _px4_gyro.set_range(math::radians(1000.f)); // 与配置一致 (LSM6DSV16X_1000dps)
+
+    _px4_mag.set_scale(1.5f / 1000.f); // 1.5 mG/LSB
     ConfigureSampleRate(_px4_gyro.get_max_rate_hz());
 }
 
@@ -63,7 +72,8 @@ bool LSM6DSV16X::Reset()
     _state = STATE::RESET;
     ScheduleClear();
 
-	uint32_t interva_delay_us = 50*1000;
+	// 1ms 调用一次 (1000Hz)，极限频率读取 FIFO，防止积压
+	uint32_t interva_delay_us = 5*1000;
 	ScheduleOnInterval(interva_delay_us, interva_delay_us);
     return true;
 }
@@ -77,7 +87,14 @@ void LSM6DSV16X::print_status()
 {
     I2CSPIDriverBase::print_status();
 
+    PX4_INFO("\n=== LSM6DSV16X Performance ===");
+    PX4_INFO("Total samples published: %u", _total_samples_published);
 
+    perf_print_counter(_fifo_read_perf);
+    perf_print_counter(_accel_pub_perf);
+    perf_print_counter(_gyro_pub_perf);
+
+    PX4_INFO("\n=== Error Counters ===");
     perf_print_counter(_bad_register_perf);
     perf_print_counter(_bad_transfer_perf);
     perf_print_counter(_fifo_empty_perf);
@@ -157,9 +174,9 @@ int LSM6DSV16X::probe()
     const uint8_t FIFO_WATERMARK = 255;
     lsm6dsv16x_fifo_watermark_set(&lsm6dsv16x_ctx, FIFO_WATERMARK);
 
-    /* Set FIFO batch XL/Gyro ODR to 60Hz */
+    /* Set FIFO batch XL/Gyro ODR to 1920Hz (1ms读取频率，每次约 2-3 个样本，避免积压) */
     lsm6dsv16x_fifo_xl_batch_set(&lsm6dsv16x_ctx, (lsm6dsv16x_fifo_xl_batch_t)LSM6DSV16X_XL_BATCHED_AT_1920Hz);
-    lsm6dsv16x_fifo_gy_batch_set(&lsm6dsv16x_ctx, (lsm6dsv16x_fifo_gy_batch_t)LSM6DSV16X_XL_BATCHED_AT_1920Hz);
+    lsm6dsv16x_fifo_gy_batch_set(&lsm6dsv16x_ctx, (lsm6dsv16x_fifo_gy_batch_t)LSM6DSV16X_GY_BATCHED_AT_1920Hz);
 
 
     /* Set FIFO mode to Stream mode (aka Continuous Mode) */
@@ -170,7 +187,7 @@ int LSM6DSV16X::probe()
     //lsm6dsv16x_pin_int2_route_set(&lsm6dsv16x_ctx, &pin_int);
 
 
-    /* Set Output Data Rate */
+    /* Set Output Data Rate to 1920Hz */
     lsm6dsv16x_xl_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
     lsm6dsv16x_gy_data_rate_set(&lsm6dsv16x_ctx, LSM6DSV16X_ODR_AT_1920Hz);
     lsm6dsv16x_fifo_timestamp_batch_set(&lsm6dsv16x_ctx, LSM6DSV16X_TMSTMP_DEC_32);
@@ -230,6 +247,7 @@ void LSM6DSV16X::RunImpl()
     lsm6dsv16x_fifo_status_get(&lsm6dsv16x_ctx, &fifo_status);
 
     if (fifo_status.fifo_th) {
+        perf_count(_fifo_read_perf);  // 计数每次 FIFO 读取
         uint16_t num = 0;
         int16_t *datax;
         int16_t *datay;
@@ -240,14 +258,10 @@ void LSM6DSV16X::RunImpl()
 
         hrt_abstime current_time = hrt_absolute_time();
 
-        // 重置FIFO数据结构
+        // 重置FIFO计数
         _accel_samples = 0;
         _gyro_samples = 0;
         _mag_samples = 0;
-
-        // 初始化FIFO数据结构
-        _accel_fifo_data.timestamp_sample = current_time;
-        _gyro_fifo_data.timestamp_sample = current_time;
 
         while (num-- && (_accel_samples < sensor_accel_fifo_s::MAX_SAMPLES ||
                          _gyro_samples < sensor_gyro_fifo_s::MAX_SAMPLES ||
@@ -264,51 +278,23 @@ void LSM6DSV16X::RunImpl()
             switch (f_data.tag) {
             case LSM6DSV16X_GY_NC_TAG: // 陀螺仪数据
                 if (_gyro_samples < sensor_gyro_fifo_s::MAX_SAMPLES) {
-                    // 转换陀螺仪数据 (dps -> rad/s)
-                    float gyro_x = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*datax) / 1000.0f);
-                    float gyro_y = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*datay) / 1000.0f);
-                    float gyro_z = math::radians(lsm6dsv16x_from_fs1000_to_mdps(*dataz) / 1000.0f);
-
-                    // 不应用旋转校正，直接赋值
-                    _gyro_fifo_data.x[_gyro_samples] = gyro_x;
-                    _gyro_fifo_data.y[_gyro_samples] = gyro_y;
-                    _gyro_fifo_data.z[_gyro_samples] = gyro_z;
-
                     _gyro_samples++;
                 }
                 break;
 
             case LSM6DSV16X_XL_NC_TAG: // 加速度计数据
                 if (_accel_samples < sensor_accel_fifo_s::MAX_SAMPLES) {
-                    // 转换加速度数据 (mg -> m/s^2)
-                    float accel_x = lsm6dsv16x_from_fs2_to_mg(*datax) / 1000.0f * CONSTANTS_ONE_G;
-                    float accel_y = lsm6dsv16x_from_fs2_to_mg(*datay) / 1000.0f * CONSTANTS_ONE_G;
-                    float accel_z = lsm6dsv16x_from_fs2_to_mg(*dataz) / 1000.0f * CONSTANTS_ONE_G;
-
-                    // 不应用旋转校正，直接赋值
-                    _accel_fifo_data.x[_accel_samples] = accel_x;
-                    _accel_fifo_data.y[_accel_samples] = accel_y;
-                    _accel_fifo_data.z[_accel_samples] = accel_z;
-
                     _accel_samples++;
                 }
                 break;
 
             case LSM6DSV16X_SENSORHUB_SLAVE0_TAG: // 磁力计数据 (通过Sensor Hub)
                 if (_mag_samples < 1) { // 一次处理一个磁力计样本
-                    // 转换磁力计数据 (mGauss -> Gauss)
-                    float mag_x = lis2mdl_from_lsb_to_mgauss(*datax) / 1000.0f;
-                    float mag_y = lis2mdl_from_lsb_to_mgauss(*datay) / 1000.0f;
-                    float mag_z = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
-
-                    // 不应用旋转校正，直接赋值
-                    _mag_data.timestamp_sample = current_time;
-                    _mag_data.device_id = get_device_id();
-                    _mag_data.x = mag_x;
-                    _mag_data.y = mag_y;
-                    _mag_data.z = mag_z;
-                    _mag_data.temperature = NAN; // 如果有温度传感器可以填入
-
+                    // 磁力计轴系: X=右, Y=前, Z=下 -> 机体系: X=前, Y=右, Z=下
+                    const float mx = static_cast<float>(*datay);
+                    const float my = static_cast<float>(*datax);
+                    const float mz = static_cast<float>(*dataz);
+                    _px4_mag.update(current_time, mx, my, mz);
                     _mag_samples++;
                 }
                 break;
@@ -329,25 +315,7 @@ void LSM6DSV16X::RunImpl()
             }
         }
 
-        // 发布加速度计FIFO数据
-        if (_accel_samples > 0) {
-            _accel_fifo_data.samples = _accel_samples;
-            _accel_fifo_data.timestamp = current_time;
-            _accel_fifo_pub.publish(_accel_fifo_data);
-        }
-
-        // 发布陀螺仪FIFO数据
-        if (_gyro_samples > 0) {
-            _gyro_fifo_data.samples = _gyro_samples;
-            _gyro_fifo_data.timestamp = current_time;
-            _gyro_fifo_pub.publish(_gyro_fifo_data);
-        }
-
-        // 发布磁力计数据
-        if (_mag_samples > 0) {
-            _mag_data.timestamp = current_time;
-            _mag_pub.publish(_mag_data);
-        }
+        // IMU (accel/gyro) 发布已禁用，仅保留磁力计发布
     }
 }
 void LSM6DSV16X::ConfigureSampleRate(int sample_rate)
