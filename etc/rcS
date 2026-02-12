@@ -158,6 +158,9 @@ fi
 param set COM_RCL_EXCEPT 4
 param set CBRK_SUPPLY_CHK 894281
 
+# 树莓派 CPU 负载检查：禁用或提高阈值（单核满负载时容易误报）
+param set COM_CPU_MAX 0
+
 # 无 SD 卡平台：禁用 SD 卡检查与日志
 param set COM_ARM_SDCARD 0
 param set SDLOG_MODE 0
@@ -251,8 +254,10 @@ lsm6dsv16x start -R 4
 ms5837 start
 sensors start
 # 禁用磁力计融合（地磁异常时使用，Yaw会缓慢漂移）
-# param set EKF2_MAG_TYPE 0
-# 跳过罗盘检查（因为磁融合已禁用）
+param set EKF2_MAG_TYPE 0
+# 水下环境：调整 EKF2 气压计参数，加快收敛速度
+param set EKF2_BARO_GATE 100
+param set EKF2_BARO_NOISE 10
 ekf2 start
 manual_control start
 wbot_mix_out start
