@@ -261,7 +261,8 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 		}
 	}
 
-	for(uint32_t dev_id = 0; dev_id <= max_dev_id; dev_id++)
+	// 使用成员变量 _max_dev_id 而非参数 max_dev_id，确保 -i 参数更新后的值生效
+	for(uint32_t dev_id = 0; dev_id <= _max_dev_id; dev_id++)
 	{
 		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, _rotation_imu);
 		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, _rotation_imu);
@@ -655,7 +656,7 @@ bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t l
 	// 由压力计算淡水深度并发布（每个MCU独立实例）
 	constexpr float kFreshwaterDensity = 1000.0f;   // kg/m^3
 	constexpr float kGravity = 9.80665f;            // m/s^2
-	constexpr float kSurfacePressurePa = 1020.25f * 100.0f; // Pa
+	constexpr float kSurfacePressurePa = 1013.25f * 100.0f; // Pa
 
 	float depth_m = (pressure_pa - kSurfacePressurePa) / (kFreshwaterDensity * kGravity);
 	if (depth_m < 0.0f) {
@@ -674,6 +675,39 @@ bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t l
 		_water_depth_pub[dev_id].publish(depth_data);
 	}
 
+	// 通过 debug_key_value 发送到地面站 (NAMED_VALUE_FLOAT MAVLink → 255.255.255.255:14550)
+	{
+		static uint8_t dbg_counter = 0;
+		debug_key_value_s dbg_msg{};
+		dbg_msg.timestamp = _now;
+
+		switch (dbg_counter++ % 3) {
+		case 0:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "pres_mbar");
+			dbg_msg.value = pressure_mbar;
+			if (_debug_pressure_pub == nullptr)
+				_debug_pressure_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_pressure_pub, &dbg_msg);
+			break;
+		case 1:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "temp_c");
+			dbg_msg.value = temperature_celsius;
+			if (_debug_temp_pub == nullptr)
+				_debug_temp_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_temp_pub, &dbg_msg);
+			break;
+		case 2:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "depth_m");
+			dbg_msg.value = depth_m;
+			if (_debug_depth_pub == nullptr)
+				_debug_depth_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_depth_pub, &dbg_msg);
+			break;
+		}
+	}
 
 	return true;
 }
