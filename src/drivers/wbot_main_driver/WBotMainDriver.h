@@ -109,7 +109,7 @@ private:
 
 	Rotation _rotation_imu{Rotation::ROTATION_NONE};
 	Rotation _rotation_mag{Rotation::ROTATION_NONE};
-	int8_t _imu_publish_dev{-1}; // -1: publish all, 0/1: publish only selected dev
+	int8_t _imu_publish_dev{-1}; // -2: disable publish, -1: publish all, 0/1: publish only selected dev
 
 	// 添加用于监听传感器数据和姿态的订阅者
 	uORB::Subscription _sensor_accel_sub{ORB_ID(sensor_accel)};
@@ -135,7 +135,8 @@ private:
 	hrt_abstime _last_disconnect_time[TOTAL_SERIAL_COUNT] = {0, 0};
 	int _disconnect_count[TOTAL_SERIAL_COUNT] = {0, 0};
 	static constexpr uint32_t RECONNECT_INTERVAL_US = 2000000; // 5秒重连间隔
-	static constexpr int MAX_DISCONNECT_COUNT = 5; // 最大断开次数
+	static constexpr int MAX_DISCONNECT_COUNT = 20; // 最大断开次数
+
 
 	// 添加辅助函数
 	void handle_device_disconnect(uint8_t dev_id);
@@ -143,6 +144,11 @@ private:
 
 	int _wbot_moto_sub = -1;
 	int _wbot_led_sub = -1;
+
+	// debug_key_value 发布句柄，用于通过 NAMED_VALUE_FLOAT MAVLink 发送水深数据到地面站
+	orb_advert_t _debug_pressure_pub{nullptr};
+	orb_advert_t _debug_temp_pub{nullptr};
+	orb_advert_t _debug_depth_pub{nullptr};
 
 	hrt_abstime _now = hrt_absolute_time();
 

@@ -71,6 +71,7 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
 	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
 
+
 	serial_name[0][0] = serial_name[1][0] = '\0';
 
 	const char *pattern = "/sys/class/tty/ttyACM*";
@@ -247,7 +248,10 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
 	this->_max_dev_id = max_dev_id;
-	if (_imu_publish_dev >= 0) {
+	if (_imu_publish_dev == -2) {
+		PX4_INFO("IMU publish disabled (-i -2)");
+
+	} else if (_imu_publish_dev >= 0) {
 		if (_imu_publish_dev >= static_cast<int8_t>(TOTAL_SERIAL_COUNT)) {
 			PX4_WARN("imu_publish_dev=%d out of range, fallback to all", _imu_publish_dev);
 			_imu_publish_dev = -1;
@@ -258,7 +262,8 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 		}
 	}
 
-	for(uint32_t dev_id = 0; dev_id <= max_dev_id; dev_id++)
+	// 使用成员变量 _max_dev_id 而非参数 max_dev_id，确保 -i 参数更新后的值生效
+	for(uint32_t dev_id = 0; dev_id <= _max_dev_id; dev_id++)
 	{
 		_px4_accel[dev_id] = new PX4Accelerometer(14123200 + dev_id, _rotation_imu);
 		_px4_gyro[dev_id] = new PX4Gyroscope(14123300 + dev_id, _rotation_imu);
@@ -671,6 +676,39 @@ bool WBotMainDriver::parse_ms5837_data(uint8_t dev_id, uint8_t *data, uint32_t l
 		_water_depth_pub[dev_id].publish(depth_data);
 	}
 
+	// 通过 debug_key_value 发送到地面站 (NAMED_VALUE_FLOAT MAVLink → 255.255.255.255:14550)
+	{
+		static uint8_t dbg_counter = 0;
+		debug_key_value_s dbg_msg{};
+		dbg_msg.timestamp = _now;
+
+		switch (dbg_counter++ % 3) {
+		case 0:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "pres_mbar");
+			dbg_msg.value = pressure_mbar;
+			if (_debug_pressure_pub == nullptr)
+				_debug_pressure_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_pressure_pub, &dbg_msg);
+			break;
+		case 1:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "temp_c");
+			dbg_msg.value = temperature_celsius;
+			if (_debug_temp_pub == nullptr)
+				_debug_temp_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_temp_pub, &dbg_msg);
+			break;
+		case 2:
+			snprintf(dbg_msg.key, sizeof(dbg_msg.key), "depth_m");
+			dbg_msg.value = depth_m;
+			if (_debug_depth_pub == nullptr)
+				_debug_depth_pub = orb_advertise(ORB_ID(debug_key_value), &dbg_msg);
+			else
+				orb_publish(ORB_ID(debug_key_value), _debug_depth_pub, &dbg_msg);
+			break;
+		}
+	}
 
 	return true;
 }
@@ -755,11 +793,7 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			float z_gauss = lis2mdl_from_lsb_to_mgauss(*dataz) / 1000.0f;
 			*/
 
-			if ( dev_id <= this->_max_dev_id)
-			{
-				// LIS2MDL: X前、Y左、Z下 -> 机体系X前、Y右、Z下，需要Y取反
-				this->_px4_mag[dev_id]->update(this->_now, *datax, -(*datay), *dataz);
-			}
+			// 磁力计发布已禁用（由 LSM6DSV16X 驱动发布磁力计数据）
 
 			break;
 		}
@@ -771,6 +805,10 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			break;
 		}
 
+	}
+
+	if (_imu_publish_dev == -2) {
+		return true;
 	}
 
 	if (dev_id <= this->_max_dev_id
@@ -906,7 +944,7 @@ Water Robot Main Driver module.
 	PRINT_MODULE_USAGE_PARAM_INT('r', 0, 0, 100, "IMU rotation N value", true);
 	PRINT_MODULE_USAGE_PARAM_INT('m', 0, 0, 100, "Mag rotation N value (default: same as -r)", true);
 	PRINT_MODULE_USAGE_PARAM_INT('d', 0, 0, 1, "max enable dev id", true);
-	PRINT_MODULE_USAGE_PARAM_INT('i', -1, -1, 1, "IMU publish dev id (-1: all, 0/1: only one)", true);
+	PRINT_MODULE_USAGE_PARAM_INT('i', -2, -2, 1, "IMU publish dev id (-2: disable, -1: all, 0/1: only one)", true);
 	PRINT_MODULE_USAGE_COMMAND_DESCR("print_data", "Print current sensor data (accel, gyro, attitude) and calibration params");
 	PRINT_MODULE_USAGE_COMMAND("pd");  // Short alias for print_data
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();

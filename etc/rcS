@@ -153,8 +153,10 @@ else
 	exit 1
 fi
 
+
 # 数据管理器（参数/日志等持久化存储）
 dataman start -r
+
 
 # MAVLink 连接配置（与地面站通信）
 #. px4-rc.mavlink
@@ -196,6 +198,7 @@ manual_control start
 #control_allocator start
 #uuv_att_control start
 #wbot_actuator_bridge start
+wbot_mix_out start
 commander start
 
 

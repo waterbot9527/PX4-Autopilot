@@ -90,6 +90,11 @@ private:
     perf_counter_t _fifo_empty_perf{perf_alloc(PC_COUNT, MODULE_NAME": FIFO empty")};
     perf_counter_t _fifo_overflow_perf{perf_alloc(PC_COUNT, MODULE_NAME": FIFO overflow")};
     perf_counter_t _fifo_reset_perf{perf_alloc(PC_COUNT, MODULE_NAME": FIFO reset")};
+    perf_counter_t _accel_pub_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": accel updates")};
+    perf_counter_t _gyro_pub_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": gyro updates")};
+    perf_counter_t _fifo_read_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": FIFO reads")};
+
+    uint32_t _total_samples_published{0};
 
     hrt_abstime _reset_timestamp{0};
     hrt_abstime _last_config_check_timestamp{0};
