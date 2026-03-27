@@ -190,8 +190,11 @@ param set-default SYS_FAILURE_EN 1
 # does not go below 50% by default, but failure injection can trigger failsafes.
 param set-default COM_LOW_BAT_ACT 3
 
-# set default IP to localhost
-param set-default UXRCE_DDS_AG_IP 2130706433  # 127.0.0.1
+# set default IP to localhost (only if parameter exists in this build)
+if param show UXRCE_DDS_AG_IP >/dev/null 2>&1
+then
+	param set-default UXRCE_DDS_AG_IP 2130706433  # 127.0.0.1
+fi
 
 
 # Adapt timeout parameters if simulation runs faster or slower than realtime.

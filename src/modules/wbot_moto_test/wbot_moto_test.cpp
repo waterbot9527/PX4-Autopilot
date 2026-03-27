@@ -8,11 +8,125 @@
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <algorithm>
 //#include <px4_platform_common/px4_log.h>
+
+static volatile px4_task_t g_toggle2_task{-1};
+static px4::atomic_bool g_toggle2_should_exit{false};
+
+static void publish_all_motor_stop()
+{
+    struct wbot_ctrl_moto_s moto_msg{};
+    moto_msg.timestamp = hrt_absolute_time();
+
+    for (int n = 0; n < 8; n++) {
+        moto_msg.speed[n] = 0;
+        moto_msg.direction[n] = 0;
+    }
+
+    orb_advert_t moto_pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &moto_msg);
+
+    if (moto_pub != nullptr) {
+        orb_publish(ORB_ID(wbot_ctrl_moto), moto_pub, &moto_msg);
+    }
+}
+
+static int toggle2_worker_main(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    orb_advert_t moto_pub = nullptr;
+    struct wbot_ctrl_moto_s moto_msg{};
+
+    moto_msg.timestamp = hrt_absolute_time();
+    for (int i = 0; i < 8; i++) {
+        moto_msg.speed[i] = 0;
+        moto_msg.direction[i] = 0;
+    }
+
+    moto_pub = orb_advertise(ORB_ID(wbot_ctrl_moto), &moto_msg);
+    if (moto_pub == nullptr) {
+        PX4_ERR("toggle2: advertise failed");
+        g_toggle2_task = -1;
+        return -1;
+    }
+
+    const int idx = 1; // motor index 2 -> array index 1
+    int16_t speeds[2] = {255, -255};
+    int cur = 0;
+
+    while (!g_toggle2_should_exit.load()) {
+        int16_t v = speeds[cur];
+
+        if (v < 0) {
+            moto_msg.direction[idx] = 1;
+            moto_msg.speed[idx] = static_cast<uint8_t>(-v);
+        } else {
+            moto_msg.direction[idx] = 0;
+            moto_msg.speed[idx] = static_cast<uint8_t>(v);
+        }
+
+        moto_msg.timestamp = hrt_absolute_time();
+        orb_publish(ORB_ID(wbot_ctrl_moto), moto_pub, &moto_msg);
+
+        cur = 1 - cur;
+        px4_usleep(10000000); // 10s 切换周期
+    }
+
+    for (int n = 0; n < 8; n++) {
+        moto_msg.speed[n] = 0;
+        moto_msg.direction[n] = 0;
+    }
+    moto_msg.timestamp = hrt_absolute_time();
+    orb_publish(ORB_ID(wbot_ctrl_moto), moto_pub, &moto_msg);
+
+    g_toggle2_task = -1;
+    PX4_INFO("toggle2 worker exited");
+    return 0;
+}
+
 extern "C" __EXPORT int wbot_moto_test_main(int argc, char *argv[]);
 extern "C" __EXPORT int wbot_moto_test_main(int argc, char *argv[])
 {
     PX4_INFO("=== wbot test publisher start ===");
 
+    // 背景切换命令：
+    //  - toggle2: 启动后台任务并立即返回 shell
+    //  - toggle2_stop: 请求后台任务退出并发布全停消息
+    if (argc > 1 && strcmp(argv[1], "toggle2_stop") == 0) {
+        if (g_toggle2_task < 0) {
+            PX4_WARN("toggle2 is not running");
+        } else {
+            g_toggle2_should_exit.store(true);
+            PX4_INFO("toggle2 stop requested");
+        }
+
+        publish_all_motor_stop();
+        return 0;
+    }
+
+    if (argc > 1 && strcmp(argv[1], "toggle2") == 0) {
+        if (g_toggle2_task >= 0) {
+            PX4_WARN("toggle2 is already running");
+            return 0;
+        }
+
+        g_toggle2_should_exit.store(false);
+        g_toggle2_task = px4_task_spawn_cmd("wbot_toggle2",
+                                             SCHED_DEFAULT,
+                                             SCHED_PRIORITY_DEFAULT,
+                                             1500,
+                                             (px4_main_t)toggle2_worker_main,
+                                             nullptr);
+
+        if (g_toggle2_task < 0) {
+            PX4_ERR("Failed to start toggle2 worker");
+            g_toggle2_task = -1;
+            return -1;
+        }
+
+        PX4_INFO("toggle2 started in background");
+        return 0;
+    }
     // 支持同时测试电机和 LED：
     // 用法示例：
     // 1) 同时测试电机和 LED: wbot_moto_test <moto_index 1-8> <moto_speed 0-255> <led_id> <led_value 0-240>

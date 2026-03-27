@@ -68,8 +68,8 @@ static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
 	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
-	const char* dev0 =  "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
+	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
 

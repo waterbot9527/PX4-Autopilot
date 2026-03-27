@@ -1,0 +1,5 @@
+menuconfig MODULES_WBOT_ACTUATOR_BRIDGE
+	bool "wbot_actuator_bridge"
+	default y
+	---help---
+		Bridge PX4 actuator_motors outputs to wbot_ctrl_moto messages.

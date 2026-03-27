@@ -1,24 +1,192 @@
 #!/bin/sh
 #
-# @name Unknown UUV (USB MCU)
+# @name Waterbot UUV (USB MCU)
 #
 # @type UUV
 #
 # @maintainer Waterbot Team
 #
 
-# Source PX4 parameters and configuration
 . ${R}/etc/init.d/rc.uuv_defaults
 
-# Vehicle type / control allocation (minimal defaults)
-param set-default CA_AIRFRAME 7
-param set-default CA_METHOD 0
-param set-default MAV_TYPE 12
+# ─── Vehicle type / control allocation ───────────────────────────────────────
+param set-default CA_AIRFRAME 7       # MOTORS_6DOF → ActuatorEffectivenessUUV
+param set-default CA_METHOD   0
+param set-default MAV_TYPE    12      # MAV_TYPE_SUBMARINE
 
-# We do not use PWM/ESCs on this platform (USB MCU handles motors)
+# ─── Platform: no ESC / no SD card ───────────────────────────────────────────
 param set-default COM_ARM_CHK_ESCS 0
-param set-default FD_ESCS_EN 0
+param set-default FD_ESCS_EN       0
+param set-default COM_ARM_SDCARD   0
+param set-default SDLOG_MODE       0
 
-# This airframe intentionally keeps parameters minimal.
-# Additional parameters (WOUT_*, COM_ARM_SDCARD, MAG checks, etc.)
-# are configured in rcS for this platform.
+# ─── Safety / arming ─────────────────────────────────────────────────────────
+param set-default COM_RCL_EXCEPT   4       # ignore RC loss in Offboard mode (bit2)
+param set-default COM_CPU_MAX     -1       # no CPU-load limit (Raspberry Pi)
+param set-default CBRK_SUPPLY_CHK 894281  # bypass voltage check (no battery)
+
+# ─── Magnetometer: disabled for underwater ────────────────────────────────────
+param set-default EKF2_MAG_TYPE   0    # no mag fusion
+param set-default COM_ARM_MAG_ANG 180
+param set-default COM_ARM_MAG_STR 0
+
+# ─── IMU calibration defaults (replace with real calibration values) ──────────
+param set-default CAL_ACC0_ID     14123200
+param set-default CAL_ACC0_XOFF   0.0
+param set-default CAL_ACC0_YOFF   0.0
+param set-default CAL_ACC0_ZOFF   0.0
+param set-default CAL_ACC0_XSCALE 1.0
+param set-default CAL_ACC0_YSCALE 1.0
+param set-default CAL_ACC0_ZSCALE 1.0
+
+param set-default CAL_GYRO0_ID   14123300
+param set-default CAL_GYRO0_PRIO 75
+param set-default CAL_GYRO0_ROT  0
+param set-default CAL_GYRO0_XOFF 0.0
+param set-default CAL_GYRO0_YOFF 0.0
+param set-default CAL_GYRO0_ZOFF 0.0
+
+param set-default CAL_MAG0_ID   14123400
+param set-default CAL_MAG0_PRIO 75
+param set-default CAL_MAG0_ROT  0
+
+# ─── WOUT output mapping (control allocation motor outputs) ──────────────────
+param set-default WOUT_FUNC1 101   # Motor1
+param set-default WOUT_FUNC2 102   # Motor2
+param set-default WOUT_FUNC3 103   # Motor3
+param set-default WOUT_FUNC4 104   # Motor4
+param set-default WOUT_FUNC5 105   # Motor5
+param set-default WOUT_FUNC6 106   # Motor6
+param set-default WOUT_FUNC7 107   # Motor7
+param set-default WOUT_FUNC8 108   # Motor8
+
+param set-default WOUT_MIN1 0
+param set-default WOUT_MAX1 512
+param set-default WOUT_MIN2 0
+param set-default WOUT_MAX2 512
+param set-default WOUT_MIN3 0
+param set-default WOUT_MAX3 512
+param set-default WOUT_MIN4 0
+param set-default WOUT_MAX4 512
+param set-default WOUT_MIN5 0
+param set-default WOUT_MAX5 512
+param set-default WOUT_MIN6 0
+param set-default WOUT_MAX6 512
+param set-default WOUT_MIN7 0
+param set-default WOUT_MAX7 512
+param set-default WOUT_MIN8 0
+param set-default WOUT_MAX8 512
+
+# ─── Thruster geometry template (CA_ROTOR*) ──────────────────────────────────
+# Fill this section after confirming physical layout.
+#
+# Coordinate convention used by PX4 control allocation (body frame, FRD):
+#   +X: forward, +Y: right, +Z: down
+#
+# For each rotor n:
+#   Position  (PX,PY,PZ): in meters, relative to vehicle center of gravity (CG)
+#   Direction (AX,AY,AZ): unit vector, positive thrust direction for positive command
+#   KM: reaction torque coefficient (start with small value, then tune)
+#
+# Axis vector must be normalized:
+#   AX^2 + AY^2 + AZ^2 = 1
+# Example:
+#   pure forward thrust  -> (1, 0, 0)
+#   pure downward thrust -> (0, 0, 1)
+#   45 deg in XY plane   -> (0.7071, 0.7071, 0)
+#
+# Enable steps:
+# 1) Uncomment CA_ROTOR_COUNT and set thruster count (8 for this platform)
+# 2) Configure CA_R_REV bitmask for reversible thrusters
+# 3) Fill rotor 0..N-1 PX/PY/PZ + AX/AY/AZ + KM
+# 4) Verify sign by testing each DOF one-by-one (roll/pitch/yaw/heave/surge/sway)
+#
+# CA_R_REV bitmask notes:
+# - Bit n controls rotor n reversibility (LSB is rotor0)
+# - All 8 reversible -> 255 (binary 11111111)
+# - Example: only rotor0/1/2 reversible -> 7 (binary 00000111)
+#
+# Suggested initial KM:
+# - If unknown, start with 0.00 to first validate force-direction mapping
+# - Then use 0.02~0.10 as a practical initial range and tune from logs
+#
+# Quick self-check before first run:
+# - Distances are meters (not mm)
+# - Positions use CG as origin (not hull corner)
+# - AX/AY/AZ follow FRD sign convention
+# - Rotors with same physical direction share same axis vector signs
+
+param set-default CA_ROTOR_COUNT 8
+param set-default CA_R_REV 255
+
+# Rotor 0 (example slot: horizontal/vector thruster)
+param set-default CA_ROTOR0_PX -0.165
+param set-default CA_ROTOR0_PY 0.000
+param set-default CA_ROTOR0_PZ -0.040
+param set-default CA_ROTOR0_AX 0.000
+param set-default CA_ROTOR0_AY 0.000
+param set-default CA_ROTOR0_AZ 1.000
+param set-default CA_ROTOR0_KM 0.000
+
+# Rotor 1 (example slot: horizontal/vector thruster)
+param set-default CA_ROTOR1_PX -0.155
+param set-default CA_ROTOR1_PY 0.020
+param set-default CA_ROTOR1_PZ 0.000
+param set-default CA_ROTOR1_AX 1.000
+param set-default CA_ROTOR1_AY 0.000
+param set-default CA_ROTOR1_AZ 0.000
+param set-default CA_ROTOR1_KM 0.000
+
+# Rotor 2 (example slot: horizontal/vector thruster)
+param set-default CA_ROTOR2_PX -0.155
+param set-default CA_ROTOR2_PY -0.020
+param set-default CA_ROTOR2_PZ 0.000
+param set-default CA_ROTOR2_AX 1.000
+param set-default CA_ROTOR2_AY 0.000
+param set-default CA_ROTOR2_AZ 0.000
+param set-default CA_ROTOR2_KM 0.000
+
+# Rotor 3 (example slot: horizontal/vector thruster)
+param set-default CA_ROTOR3_PX 0.000
+param set-default CA_ROTOR3_PY 0.000
+param set-default CA_ROTOR3_PZ 0.000
+param set-default CA_ROTOR3_AX 1.000
+param set-default CA_ROTOR3_AY 0.000
+param set-default CA_ROTOR3_AZ 0.000
+param set-default CA_ROTOR3_KM 0.000
+
+# Rotor 4 (example slot: vertical thruster)
+param set-default CA_ROTOR4_PX 0.140
+param set-default CA_ROTOR4_PY -0.045
+param set-default CA_ROTOR4_PZ 0.000
+param set-default CA_ROTOR4_AX 0.000
+param set-default CA_ROTOR4_AY 0.000
+param set-default CA_ROTOR4_AZ 1.000
+param set-default CA_ROTOR4_KM 0.000
+
+# Rotor 5 (example slot: vertical thruster)
+param set-default CA_ROTOR5_PX 0.140
+param set-default CA_ROTOR5_PY 0.045
+param set-default CA_ROTOR5_PZ 0.000
+param set-default CA_ROTOR5_AX 0.000
+param set-default CA_ROTOR5_AY 0.000
+param set-default CA_ROTOR5_AZ 1.000
+param set-default CA_ROTOR5_KM 0.000
+
+# Rotor 6 (example slot: vertical thruster)
+param set-default CA_ROTOR6_PX 0.110
+param set-default CA_ROTOR6_PY 0.000
+param set-default CA_ROTOR6_PZ 0.002
+param set-default CA_ROTOR6_AX 0.000
+param set-default CA_ROTOR6_AY 0.000
+param set-default CA_ROTOR6_AZ 1.000
+param set-default CA_ROTOR6_KM 0.000
+
+# Rotor 7 (example slot: vertical thruster)
+param set-default CA_ROTOR7_PX 0.145
+param set-default CA_ROTOR7_PY 0.000
+param set-default CA_ROTOR7_PZ 0.004
+param set-default CA_ROTOR7_AX 0.000
+param set-default CA_ROTOR7_AY 0.000
+param set-default CA_ROTOR7_AZ 1.000
+param set-default CA_ROTOR7_KM 0.000
