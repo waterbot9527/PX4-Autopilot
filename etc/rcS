@@ -188,11 +188,8 @@ lsm6dsv16x start -R 4
 # 启动 MS5837 气压计驱动（I2C）
 ms5837 start -I -b 1
 sensors start
-# 禁用磁力计融合（地磁异常时使用，Yaw会缓慢漂移）
-param set EKF2_MAG_TYPE 0
-# 水下环境：调整 EKF2 气压计参数，加快收敛速度
-param set EKF2_BARO_GATE 100
-param set EKF2_BARO_NOISE 10
+# 禁用磁力计融合（地磁异常时使用，Yaw会慢漂移）
+# EKF2 MAG/Baro settings moved to airframe defaults for this vehicle
 ekf2 start
 manual_control start
 #control_allocator start

@@ -30,6 +30,10 @@ param set-default EKF2_MAG_TYPE   0    # no mag fusion
 param set-default COM_ARM_MAG_ANG 180
 param set-default COM_ARM_MAG_STR 0
 
+# Waterbot (UUV) EKF barometer tuning for faster convergence underwater
+param set-default EKF2_BARO_GATE 100
+param set-default EKF2_BARO_NOISE 10
+
 # ─── IMU calibration defaults (replace with real calibration values) ──────────
 param set-default CAL_ACC0_ID     14123200
 param set-default CAL_ACC0_XOFF   0.0
@@ -50,15 +54,24 @@ param set-default CAL_MAG0_ID   14123400
 param set-default CAL_MAG0_PRIO 75
 param set-default CAL_MAG0_ROT  0
 
+param set-default WOUT_FUNC1 402
+param set-default WOUT_FUNC2 403
+param set-default WOUT_FUNC3 404
+param set-default WOUT_FUNC4 405
+param set-default WOUT_FUNC5 406
+param set-default WOUT_FUNC6 407
+param set-default WOUT_FUNC7 408
+param set-default WOUT_FUNC8 409
+
 # ─── WOUT output mapping (control allocation motor outputs) ──────────────────
-param set-default WOUT_FUNC1 101   # Motor1
-param set-default WOUT_FUNC2 102   # Motor2
-param set-default WOUT_FUNC3 103   # Motor3
-param set-default WOUT_FUNC4 104   # Motor4
-param set-default WOUT_FUNC5 105   # Motor5
-param set-default WOUT_FUNC6 106   # Motor6
-param set-default WOUT_FUNC7 107   # Motor7
-param set-default WOUT_FUNC8 108   # Motor8
+# param set-default WOUT_FUNC1 101   # Motor1
+# param set-default WOUT_FUNC2 102   # Motor2
+# param set-default WOUT_FUNC3 103   # Motor3
+# param set-default WOUT_FUNC4 104   # Motor4
+# param set-default WOUT_FUNC5 105   # Motor5
+# param set-default WOUT_FUNC6 106   # Motor6
+# param set-default WOUT_FUNC7 107   # Motor7
+# param set-default WOUT_FUNC8 108   # Motor8
 
 param set-default WOUT_MIN1 0
 param set-default WOUT_MAX1 512
@@ -116,77 +129,77 @@ param set-default WOUT_MAX8 512
 # - AX/AY/AZ follow FRD sign convention
 # - Rotors with same physical direction share same axis vector signs
 
-param set-default CA_ROTOR_COUNT 8
-param set-default CA_R_REV 255
+# param set-default CA_ROTOR_COUNT 8
+# param set-default CA_R_REV 255
 
-# Rotor 0 (example slot: horizontal/vector thruster)
-param set-default CA_ROTOR0_PX -0.165
-param set-default CA_ROTOR0_PY 0.000
-param set-default CA_ROTOR0_PZ -0.040
-param set-default CA_ROTOR0_AX 0.000
-param set-default CA_ROTOR0_AY 0.000
-param set-default CA_ROTOR0_AZ 1.000
-param set-default CA_ROTOR0_KM 0.000
+# # Rotor 0 (example slot: horizontal/vector thruster)
+# param set-default CA_ROTOR0_PX -0.165
+# param set-default CA_ROTOR0_PY 0.000
+# param set-default CA_ROTOR0_PZ -0.040
+# param set-default CA_ROTOR0_AX 0.000
+# param set-default CA_ROTOR0_AY 0.000
+# param set-default CA_ROTOR0_AZ 1.000
+# param set-default CA_ROTOR0_KM 0.000
 
-# Rotor 1 (example slot: horizontal/vector thruster)
-param set-default CA_ROTOR1_PX -0.155
-param set-default CA_ROTOR1_PY 0.020
-param set-default CA_ROTOR1_PZ 0.000
-param set-default CA_ROTOR1_AX 1.000
-param set-default CA_ROTOR1_AY 0.000
-param set-default CA_ROTOR1_AZ 0.000
-param set-default CA_ROTOR1_KM 0.000
+# # Rotor 1 (example slot: horizontal/vector thruster)
+# param set-default CA_ROTOR1_PX -0.155
+# param set-default CA_ROTOR1_PY 0.020
+# param set-default CA_ROTOR1_PZ 0.000
+# param set-default CA_ROTOR1_AX 1.000
+# param set-default CA_ROTOR1_AY 0.000
+# param set-default CA_ROTOR1_AZ 0.000
+# param set-default CA_ROTOR1_KM 0.000
 
-# Rotor 2 (example slot: horizontal/vector thruster)
-param set-default CA_ROTOR2_PX -0.155
-param set-default CA_ROTOR2_PY -0.020
-param set-default CA_ROTOR2_PZ 0.000
-param set-default CA_ROTOR2_AX 1.000
-param set-default CA_ROTOR2_AY 0.000
-param set-default CA_ROTOR2_AZ 0.000
-param set-default CA_ROTOR2_KM 0.000
+# # Rotor 2 (example slot: horizontal/vector thruster)
+# param set-default CA_ROTOR2_PX -0.155
+# param set-default CA_ROTOR2_PY -0.020
+# param set-default CA_ROTOR2_PZ 0.000
+# param set-default CA_ROTOR2_AX 1.000
+# param set-default CA_ROTOR2_AY 0.000
+# param set-default CA_ROTOR2_AZ 0.000
+# param set-default CA_ROTOR2_KM 0.000
 
-# Rotor 3 (example slot: horizontal/vector thruster)
-param set-default CA_ROTOR3_PX 0.000
-param set-default CA_ROTOR3_PY 0.000
-param set-default CA_ROTOR3_PZ 0.000
-param set-default CA_ROTOR3_AX 1.000
-param set-default CA_ROTOR3_AY 0.000
-param set-default CA_ROTOR3_AZ 0.000
-param set-default CA_ROTOR3_KM 0.000
+# # Rotor 3 (example slot: horizontal/vector thruster)
+# param set-default CA_ROTOR3_PX 0.000
+# param set-default CA_ROTOR3_PY 0.000
+# param set-default CA_ROTOR3_PZ 0.000
+# param set-default CA_ROTOR3_AX 1.000
+# param set-default CA_ROTOR3_AY 0.000
+# param set-default CA_ROTOR3_AZ 0.000
+# param set-default CA_ROTOR3_KM 0.000
 
-# Rotor 4 (example slot: vertical thruster)
-param set-default CA_ROTOR4_PX 0.140
-param set-default CA_ROTOR4_PY -0.045
-param set-default CA_ROTOR4_PZ 0.000
-param set-default CA_ROTOR4_AX 0.000
-param set-default CA_ROTOR4_AY 0.000
-param set-default CA_ROTOR4_AZ 1.000
-param set-default CA_ROTOR4_KM 0.000
+# # Rotor 4 (example slot: vertical thruster)
+# param set-default CA_ROTOR4_PX 0.140
+# param set-default CA_ROTOR4_PY -0.045
+# param set-default CA_ROTOR4_PZ 0.000
+# param set-default CA_ROTOR4_AX 0.000
+# param set-default CA_ROTOR4_AY 0.000
+# param set-default CA_ROTOR4_AZ 1.000
+# param set-default CA_ROTOR4_KM 0.000
 
-# Rotor 5 (example slot: vertical thruster)
-param set-default CA_ROTOR5_PX 0.140
-param set-default CA_ROTOR5_PY 0.045
-param set-default CA_ROTOR5_PZ 0.000
-param set-default CA_ROTOR5_AX 0.000
-param set-default CA_ROTOR5_AY 0.000
-param set-default CA_ROTOR5_AZ 1.000
-param set-default CA_ROTOR5_KM 0.000
+# # Rotor 5 (example slot: vertical thruster)
+# param set-default CA_ROTOR5_PX 0.140
+# param set-default CA_ROTOR5_PY 0.045
+# param set-default CA_ROTOR5_PZ 0.000
+# param set-default CA_ROTOR5_AX 0.000
+# param set-default CA_ROTOR5_AY 0.000
+# param set-default CA_ROTOR5_AZ 1.000
+# param set-default CA_ROTOR5_KM 0.000
 
-# Rotor 6 (example slot: vertical thruster)
-param set-default CA_ROTOR6_PX 0.110
-param set-default CA_ROTOR6_PY 0.000
-param set-default CA_ROTOR6_PZ 0.002
-param set-default CA_ROTOR6_AX 0.000
-param set-default CA_ROTOR6_AY 0.000
-param set-default CA_ROTOR6_AZ 1.000
-param set-default CA_ROTOR6_KM 0.000
+# # Rotor 6 (example slot: vertical thruster)
+# param set-default CA_ROTOR6_PX 0.110
+# param set-default CA_ROTOR6_PY 0.000
+# param set-default CA_ROTOR6_PZ 0.002
+# param set-default CA_ROTOR6_AX 0.000
+# param set-default CA_ROTOR6_AY 0.000
+# param set-default CA_ROTOR6_AZ 1.000
+# param set-default CA_ROTOR6_KM 0.000
 
-# Rotor 7 (example slot: vertical thruster)
-param set-default CA_ROTOR7_PX 0.145
-param set-default CA_ROTOR7_PY 0.000
-param set-default CA_ROTOR7_PZ 0.004
-param set-default CA_ROTOR7_AX 0.000
-param set-default CA_ROTOR7_AY 0.000
-param set-default CA_ROTOR7_AZ 1.000
-param set-default CA_ROTOR7_KM 0.000
+# # Rotor 7 (example slot: vertical thruster)
+# param set-default CA_ROTOR7_PX 0.145
+# param set-default CA_ROTOR7_PY 0.000
+# param set-default CA_ROTOR7_PZ 0.004
+# param set-default CA_ROTOR7_AX 0.000
+# param set-default CA_ROTOR7_AY 0.000
+# param set-default CA_ROTOR7_AZ 1.000
+# param set-default CA_ROTOR7_KM 0.000

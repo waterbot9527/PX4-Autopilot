@@ -56,6 +56,29 @@
 
 using namespace time_literals;
 
+// Motor driver info structure (packed) - mirrors src/drivers/wbot_main_driver/info.c
+#pragma pack(push, 1)
+struct MotorDriverInfoLocal {
+	uint8_t status_reg1;        // offset 0
+	uint8_t status_reg2;        // offset 1
+	uint8_t motor_speed_lsb;    // offset 2
+	uint8_t motor_speed_msb;    // offset 3
+	uint8_t motor_period_lsb;   // offset 4
+	uint8_t motor_period_msb;   // offset 5
+	uint8_t bemf_ke_lsb;        // offset 6
+	uint8_t bemf_ke_msb;        // offset 7
+	uint8_t supply_voltage;     // offset 8
+	uint8_t motor_current_lsb;  // offset 9
+	uint8_t motor_current_msb;  // offset 10
+	uint8_t reserved1;          // offset 11
+	uint8_t speed_command;      // offset 12
+	uint8_t speed_buffer;       // offset 13
+	uint8_t error_warnings;     // offset 14
+	uint8_t temp_high;          // offset 15 (Temp[9:2])
+	uint8_t temp_low;           // offset 16 (Temp[1:0] in low bits)
+};
+#pragma pack(pop)
+
 // Local guard for packet buffer size (must match CMD_BUF_SIZE)
 static constexpr int kCmdBufSize = 256;
 
@@ -67,9 +90,10 @@ static constexpr int kCmdBufSize = 256;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	//const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0/tty";
-	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.4/1-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00200000.usb/xhci-hcd.0/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
+	// const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
+	// const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
+	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
@@ -444,7 +468,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 	// 		printf("\n");
 	// 	}
 	// }
-	//printf("\n");
+	// printf("\n");
 	if ( write_length != (int)cmd_size) {
 		PX4_WARN("wbot main can't write , dev id=%i", dev_id);
 		handle_device_disconnect(dev_id);
@@ -457,7 +481,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 		PX4_WARN("wbot main can't read , dev id=%i, ret=%d fd=%d", dev_id, read_length, this->_serial_fd[dev_id]);
 	 	return;
 	} else {
-		//printf("read data from %d mcu:\n",dev_id);
+		// printf("read data from %d mcu:\n",dev_id);
 		// for (int n = 0; n < read_length; n++)
 		// {
 		// 	printf(" 0x%02x, ", recv_cache[n]);
@@ -470,7 +494,7 @@ void WBotMainDriver::RunForOne(uint32_t dev_id, uint32_t cmd_size)
 
 	_now = hrt_absolute_time();
 	int ret = parse_mcu_data(dev_id, recv_cache);
-	//PX4_INFO("parse_mcu_data: %d\n",ret);
+	// PX4_INFO("parse_mcu_data: %d\n",ret);
 
 	switch (ret)
 	{
@@ -526,16 +550,91 @@ bool WBotMainDriver::attempt_reconnect(uint8_t dev_id) {
 
 bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t moto_index, uint32_t len)
 {
-	if  ( len != MOTOR_DATA_SIZE || ( moto_index >= MOTOR_MAX_NUM ) )
-	{
-		PX4_DEBUG("parse motor error spi addr=%i motor_index=%i buf_len=%i",
-			dev_id, moto_index, len
-			);
+	if (moto_index >= MOTOR_MAX_NUM) {
+		PX4_DEBUG("parse motor error invalid motor_index=%u buf_len=%u", (unsigned)moto_index, (unsigned)len);
 		return false;
 	}
 
-	// TODO only report data[0] to upper computer
+	if (data == nullptr || len < 11) {
+		PX4_WARN("parse motor error: expected 11 bytes, got %u (dev=%u idx=%u)", (unsigned)len, (unsigned)dev_id, (unsigned)moto_index);
+		return false;
+	}
 
+	// === 调试打印配置（按需修改）===
+	// motor_debug_enable：总开关，false = 完全不打印
+	// motor_debug_dev：   -1 = 所有 dev；0/1/… = 只打印指定 dev
+	// motor_debug_idx：   -1 = 所有 motor index；0/1/2/3 = 只打印指定电机序号
+	static bool motor_debug_enable = true;
+	static int  motor_debug_dev    = -1;
+	static int  motor_debug_idx    = -1;
+
+	// 频率限制：每个 dev 独立计时，1秒最多打印一次
+	static uint64_t last_print_time[TOTAL_SERIAL_COUNT] = {};
+	const uint64_t now = hrt_absolute_time();
+
+	// dev 过滤
+	const bool dev_match = (motor_debug_dev < 0) || (static_cast<uint32_t>(motor_debug_dev) == dev_id);
+	// moto_index 过滤
+	const bool idx_match = (motor_debug_idx < 0) || (static_cast<uint32_t>(motor_debug_idx) == moto_index);
+
+	if (motor_debug_enable && dev_match && idx_match && (now - last_print_time[dev_id] >= 1_s)) {
+		last_print_time[dev_id] = now;
+
+		// 打印原始字节
+		char buf[256];
+		int pos = snprintf(buf, sizeof(buf), "motor dev=%u idx=%u len=%u:", (unsigned)dev_id, (unsigned)moto_index, (unsigned)len);
+		for (uint32_t i = 0; i < len && pos < (int)sizeof(buf) - 4; ++i) {
+			pos += snprintf(buf + pos, sizeof(buf) - pos, " %02X", data[i]);
+		}
+		PX4_INFO("%s", buf);
+
+		// 解析并打印各字段
+		auto read_u8l = [&](uint32_t off, uint8_t &out) -> bool {
+			if (off + 1 > len) return false;
+			out = data[off]; return true;
+		};
+		auto read_u16l = [&](uint32_t off, uint16_t &out) -> bool {
+			if (off + 2 > len) return false;
+			out = (uint16_t)data[off] | ((uint16_t)data[off + 1] << 8); return true;
+		};
+
+		uint8_t status1 = 0, status2 = 0;
+		read_u8l(0, status1);
+		read_u8l(1, status2);
+		PX4_INFO("  status1=0x%02X(OC=%u OT=%u OV=%u UV=%u CP=%u MF=%u HZ=%u) status2=0x%02X(OL=%u CL=%u BE=%u SE=%u NM=%u CF=%u HF=%u PNL=%u)",
+			status1,
+			(status1>>0)&1, (status1>>1)&1, (status1>>2)&1, (status1>>3)&1,
+			(status1>>4)&1, (status1>>5)&1, (status1>>6)&1,
+			status2,
+			(status2>>0)&1, (status2>>1)&1, (status2>>2)&1, (status2>>3)&1,
+			(status2>>4)&1, (status2>>5)&1, (status2>>6)&1, (status2>>7)&1);
+
+		uint16_t motor_speed = 0;
+		if (read_u16l(2, motor_speed)) {
+			PX4_INFO("  speed=%u -> %.1f rpm", (unsigned)motor_speed, (double)(motor_speed / 10.0f));
+		}
+
+		uint16_t motor_period = 0;
+		if (read_u16l(4, motor_period)) {
+			PX4_INFO("  period=%u", (unsigned)motor_period);
+		}
+
+		uint16_t bemf_ke = 0;
+		if (read_u16l(6, bemf_ke)) {
+			PX4_INFO("  bemf_Ke=%u -> %.3f V/Hz", (unsigned)bemf_ke, (double)(bemf_ke / 1000.0f));
+		}
+
+		uint8_t supply_v_raw = 0;
+		if (read_u8l(8, supply_v_raw)) {
+			PX4_INFO("  supply=%.3f V", (double)(supply_v_raw * 0.122f));
+		}
+
+		uint16_t motor_current_raw = 0;
+		read_u16l(9, motor_current_raw);  // offset 9-10，固定存在
+		PX4_INFO("  current=%.3f A (raw=%u)", (double)(motor_current_raw * 5.86e-3f), (unsigned)motor_current_raw);
+	}
+
+	// TODO: 把需要上报给上位机的字段封装上报
 	return true;
 }
 
@@ -794,7 +893,11 @@ bool WBotMainDriver::parse_imu_data(uint8_t dev_id, uint8_t *data, uint32_t len)
 			*/
 
 			// 磁力计发布已禁用（由 LSM6DSV16X 驱动发布磁力计数据）
-
+			// if ( dev_id <= this->_max_dev_id)
+			// {
+			// 	// LIS2MDL: X前、Y左、Z下 -> 机体系X前、Y右、Z下，需要Y取反
+			// 	this->_px4_mag[dev_id]->update(this->_now, *datax, -(*datay), *dataz);
+			// }
 			break;
 		}
 		case 0: //LSM6DSV16X_FIFO_EMPTY:
