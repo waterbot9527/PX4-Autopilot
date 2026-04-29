@@ -276,6 +276,7 @@ set(msg_files
 	wbot_ctrl_moto.msg
 	wbot_ctrl_led.msg
 	sensor_baro_data.msg
+	Uuvmotor.msg
 )
 list(SORT msg_files)
 

@@ -559,27 +559,10 @@ bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t mo
 		PX4_WARN("parse motor error: expected 11 bytes, got %u (dev=%u idx=%u)", (unsigned)len, (unsigned)dev_id, (unsigned)moto_index);
 		return false;
 	}
-
-	// === 调试打印配置（按需修改）===
-	// motor_debug_enable：总开关，false = 完全不打印
-	// motor_debug_dev：   -1 = 所有 dev；0/1/… = 只打印指定 dev
-	// motor_debug_idx：   -1 = 所有 motor index；0/1/2/3 = 只打印指定电机序号
-	static bool motor_debug_enable = true;
-	static int  motor_debug_dev    = -1;
-	static int  motor_debug_idx    = -1;
-
-	// 频率限制：每个 dev 独立计时，1秒最多打印一次
-	static uint64_t last_print_time[TOTAL_SERIAL_COUNT] = {};
-	const uint64_t now = hrt_absolute_time();
-
-	// dev 过滤
-	const bool dev_match = (motor_debug_dev < 0) || (static_cast<uint32_t>(motor_debug_dev) == dev_id);
-	// moto_index 过滤
-	const bool idx_match = (motor_debug_idx < 0) || (static_cast<uint32_t>(motor_debug_idx) == moto_index);
-
-	if (motor_debug_enable && dev_match && idx_match && (now - last_print_time[dev_id] >= 1_s)) {
-		last_print_time[dev_id] = now;
-
+#if 0
+	// 直接打印：每次解析都输出原始字节及解析后的字段
+	// if(dev_id == 1 && (moto_index == 2 ))
+	{
 		// 打印原始字节
 		char buf[256];
 		int pos = snprintf(buf, sizeof(buf), "motor dev=%u idx=%u len=%u:", (unsigned)dev_id, (unsigned)moto_index, (unsigned)len);
@@ -633,8 +616,62 @@ bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t mo
 		read_u16l(9, motor_current_raw);  // offset 9-10，固定存在
 		PX4_INFO("  current=%.3f A (raw=%u)", (double)(motor_current_raw * 5.86e-3f), (unsigned)motor_current_raw);
 	}
+#endif
 
-	// TODO: 把需要上报给上位机的字段封装上报
+	// 封装并发布到 uuvmotor topic（限频由 _last_motor_pub 控制）
+	{
+		uint8_t status1 = data[0];
+		uint8_t status2 = data[1];
+		uint16_t motor_speed_raw = (uint16_t)data[2] | ((uint16_t)data[3] << 8);
+		uint16_t motor_period = (uint16_t)data[4] | ((uint16_t)data[5] << 8);
+		uint16_t bemf_ke_raw = (uint16_t)data[6] | ((uint16_t)data[7] << 8);
+		uint8_t supply_v_raw = data[8];
+		uint16_t motor_current_raw = (uint16_t)data[9] | ((uint16_t)data[10] << 8);
+
+		// rate limit per motor
+		if (dev_id < TOTAL_SERIAL_COUNT && moto_index < MOTOR_MAX_NUM) {
+			if (hrt_elapsed_time(&_last_motor_pub[dev_id][moto_index]) < MOTOR_PUB_INTERVAL_US) {
+				return true;
+			}
+			_last_motor_pub[dev_id][moto_index] = _now;
+		}
+
+		uuvmotor_s msg{};
+		msg.timestamp = _now;
+		msg.device_id = static_cast<uint8_t>(dev_id);
+		msg.motor_id = static_cast<uint8_t>(moto_index);
+
+		// status1 bits
+		msg.over_current = (status1 >> 0) & 1;
+		msg.over_temp = (status1 >> 1) & 1;
+		msg.over_voltage = (status1 >> 2) & 1;
+		msg.under_voltage = (status1 >> 3) & 1;
+		msg.charge_pump_under_voltage = (status1 >> 4) & 1;
+		msg.motor_fault = (status1 >> 5) & 1;
+		msg.high_z_mode = (status1 >> 6) & 1;
+		msg.clear_fault = (status1 >> 7) & 1;
+
+		// status2 bits
+		msg.open_loop_lock = (status2 >> 0) & 1;
+		msg.closed_loop_lock = (status2 >> 1) & 1;
+		msg.bemf_error = (status2 >> 2) & 1;
+		msg.speed_error = (status2 >> 3) & 1;
+		msg.no_motor = (status2 >> 4) & 1;
+		msg.current_fault = (status2 >> 5) & 1;
+		msg.hall_fault = (status2 >> 6) & 1;
+		msg.pump_no_load = (status2 >> 7) & 1;
+
+		// raw / converted values
+		msg.motor_speed = motor_speed_raw;
+		msg.motor_period = motor_period;
+		msg.bemf_ke = bemf_ke_raw;
+		msg.supply_voltage = (float)supply_v_raw * 0.122f;
+		msg.motor_current = (float)motor_current_raw * 5.86e-3f;
+
+		// publish
+		_uuvmotor_pub.publish(msg);
+	}
+
 	return true;
 }
 
@@ -678,11 +715,11 @@ int WBotMainDriver::parse_mcu_data(uint8_t dev_id, uint8_t *data) {
 	}
 
         // 处理数据
-        PX4_DEBUG("TAG %02X, LEN %d, DATA:", tag, data_len);
-        for (uint16_t i = 0; i < data_len; i++) {
-            PX4_DEBUG(" %02X", data[index + i]);
-        }
-	PX4_DEBUG("\n");
+        // printf("TAG %02X, LEN %d, DATA:", tag, data_len);
+        // for (uint16_t i = 0; i < data_len; i++) {
+        //     printf(" %02X", data[index + i]);
+        // }
+	// printf("\n");
 
 	switch (tag)
 	{

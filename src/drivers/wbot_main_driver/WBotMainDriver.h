@@ -50,6 +50,8 @@
 
 #include <uORB/Subscription.hpp>  // 添加这个头文件以支持uORB::Subscription
 #include <uORB/PublicationMulti.hpp>
+#include <uORB/Publication.hpp>
+#include <uORB/topics/uuvmotor.h>
 #include <uORB/topics/wbot_ctrl_moto.h>
 #include <uORB/topics/debug_key_value.h>
 #include <uORB/topics/wbot_ctrl_led.h>
@@ -161,5 +163,15 @@ private:
 	perf_counter_t _bad_packtail_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad packet tail")};
 	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
 	perf_counter_t _right_perf{perf_alloc(PC_COUNT, MODULE_NAME": all_right")};
+
+	// uuv motor publish: single publication used for all motor messages
+	uORB::Publication<uuvmotor_s> _uuvmotor_pub{ORB_ID(uuvmotor)};
+
+	// last publish time per (dev_id, motor_index) for rate limiting
+	static constexpr uint8_t MOTOR_MAX_INDEX = 8; // 最大电机数量
+	hrt_abstime _last_motor_pub[TOTAL_SERIAL_COUNT][MOTOR_MAX_INDEX] = {{0}};
+
+	// minimum interval between publishes per motor (us)
+	static constexpr hrt_abstime MOTOR_PUB_INTERVAL_US = 20000; // 50 Hz default
 
 };
