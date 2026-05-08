@@ -4,7 +4,7 @@
 #include <drivers/drv_hrt.h>
 #include <lib/drivers/accelerometer/PX4Accelerometer.hpp>
 #include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
-#include <lib/drivers/device/i2c.h>
+#include <lib/drivers/device/spi.h>
 #include <lib/drivers/gyroscope/PX4Gyroscope.hpp>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/i2c_spi_buses.h>
@@ -17,7 +17,7 @@
 #include <uORB/topics/sensor_mag.h>
 
 
-class LSM6DSV16X : public device::I2C, public I2CSPIDriver<LSM6DSV16X>
+class LSM6DSV16X : public device::SPI, public I2CSPIDriver<LSM6DSV16X>
 {
 public:
     LSM6DSV16X(const I2CSPIDriverConfig &config);
@@ -31,12 +31,12 @@ public:
 private:
     void exit_and_cleanup() override;
 
-    // 传感器配置参数
-    // static constexpr float FIFO_SAMPLE_DT{1e6f};  // 采样间隔(us)
+    // Sensor configuration
+    // static constexpr float FIFO_SAMPLE_DT{1e6f};  // sampling interval (us)
     // static constexpr float GYRO_RATE{1};
     // static constexpr float ACCEL_RATE{1};
 
-    // FIFO最大采样数 (受限于FIFO深度和数据结构)
+    // Maximum FIFO samples (limited by FIFO depth and data structure size)
     //static constexpr int32_t FIFO_MAX_SAMPLES{math::min(FIFO::SIZE / 12, 32)};
 
     struct register_config_t {
@@ -50,25 +50,25 @@ private:
     bool Configure();
     void ConfigureSampleRate(int sample_rate);
 
-    // 添加发布者
+    // uORB publishers
     uORB::PublicationMulti<sensor_accel_fifo_s> _accel_fifo_pub{ORB_ID(sensor_accel_fifo)};
     uORB::PublicationMulti<sensor_gyro_fifo_s> _gyro_fifo_pub{ORB_ID(sensor_gyro_fifo)};
     uORB::PublicationMulti<sensor_mag_s> _mag_pub{ORB_ID(sensor_mag)};
 
-    // 用于批量处理FIFO数据
+    // FIFO batch data buffers
     sensor_accel_fifo_s _accel_fifo_data{};
     sensor_gyro_fifo_s _gyro_fifo_data{};
     sensor_mag_s _mag_data{};
 
-    // FIFO数据计数器
+    // FIFO sample counters
     uint8_t _accel_samples{0};
     uint8_t _gyro_samples{0};
     uint8_t _mag_samples{0};
 
-    /* 设备上下文 */
+    /* SPI and sensor hub device contexts */
     static stmdev_ctx_t lsm6dsv16x_ctx;
     static stmdev_ctx_t lis2mdl_ctx;
-    /* 函数声明 */
+    /* Platform SPI callbacks and sensor hub I2C proxy functions */
     static int platform_read(void *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
     static int platform_write( void *handle,uint8_t reg, uint8_t *bufp, uint16_t len);
     static int lsm6dsv16x_write_lis2mdl_cx(void *ctx, uint8_t reg, uint8_t *data, uint16_t len);
@@ -84,7 +84,7 @@ private:
     PX4Gyroscope _px4_gyro;
     PX4Magnetometer _px4_mag;
 
-    // 性能计数器
+    // Performance counters
     perf_counter_t _bad_register_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad register")};
     perf_counter_t _bad_transfer_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad transfer")};
     perf_counter_t _fifo_empty_perf{perf_alloc(PC_COUNT, MODULE_NAME": FIFO empty")};
@@ -109,9 +109,9 @@ private:
         FIFO_READ,
     } _state{STATE::RESET};
 
-    // Sensor Hub初始化函数
+    // Sensor Hub initialization
     // bool InitSensorHub();
-    // 从设备（LIS2MDL）初始化函数
+    // Slave device (LIS2MDL) initialization
     bool InitLIS2MDL();
 
 };

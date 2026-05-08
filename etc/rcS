@@ -182,9 +182,9 @@ load_mon start
 # -i 0 表示仅发布 dev0 的 IMU（14123200/14123300）
 batt_smbus start -I -b 0
 wbot_main_driver start -r 4 -m 0 -d 0 -i 0
-# 磁力计来自 LSM6DSV16X（I2C地址 0x6B，device_id 15624969）
+# 磁力计来自 LSM6DSV16X（SPI）
 # 虽然它也会发布 IMU，但通过优先级控制，EKF2 只用 wbot_main_driver 的 IMU
-lsm6dsv16x start -R 4
+lsm6dsv16x start -s -b 0 -R 4
 # 启动 MS5837 气压计驱动（I2C）
 ms5837 start -I -b 1
 sensors start
