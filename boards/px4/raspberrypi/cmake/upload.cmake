@@ -31,10 +31,18 @@
 #
 ############################################################################
 
-if(DEFINED ENV{AUTOPILOT_HOST})
-	set(AUTOPILOT_HOST $ENV{AUTOPILOT_HOST})
+# Upload target host resolution priority:
+# 1) CMake cache variable (-DAUTOPILOT_HOST=...)
+# 2) Environment variable (AUTOPILOT_HOST)
+# 3) Default host name
+if(NOT DEFINED AUTOPILOT_HOST OR "${AUTOPILOT_HOST}" STREQUAL "")
+	if(DEFINED ENV{AUTOPILOT_HOST} AND NOT "$ENV{AUTOPILOT_HOST}" STREQUAL "")
+		set(AUTOPILOT_HOST "$ENV{AUTOPILOT_HOST}" CACHE STRING "Target host for raspberrypi upload" FORCE)
+	else()
+		set(AUTOPILOT_HOST "raspberrypi" CACHE STRING "Target host for raspberrypi upload" FORCE)
+	endif()
 else()
-	set(AUTOPILOT_HOST "raspberrypi")
+	set(AUTOPILOT_HOST "${AUTOPILOT_HOST}" CACHE STRING "Target host for raspberrypi upload" FORCE)
 endif()
 
 add_custom_target(upload
