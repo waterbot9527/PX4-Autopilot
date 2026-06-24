@@ -86,11 +86,63 @@ EKF2 选用的 IMU 由传感器投票器决定，投票器优先级来自校准�
 - `CAL_GYROx_PRIO` / `CAL_ACCx_PRIO`：选择主 IMU
 - `CAL_GYROx_ID` / `CAL_ACCx_ID`：槽位与设备绑定
 
-## 6. 与代码的对应关系（索引）
+## 6. 常见告警排查
 
+### 6.1 "Preflight Fail: ekf2 missing data"
+
+这个告警表示 EKF2 无法正常读取数据或实例选择失败。排查步骤：
+
+1. **检查 EKF2 是否运行**
+   ```bash
+   listener estimator_status
+   ```
+   - 无输出 → EKF2 崩溃，见"EKF2 启动失败"
+   - 有输出 → 继续步骤 2
+
+2. **验证传感器选择与实际设备匹配**
+   ```bash
+   listener sensor_selection
+   # 记下 gyro_device_id 和 accel_device_id（例如 14123300）
+
+   listener sensor_gyro
+   listener sensor_accel
+   # 确认这些 device_id 确实出现在数据中
+   ```
+   - 找不到对应 device_id → 传感器未启动或驱动参数不匹配
+
+3. **检查驱动启动参数**
+   - 如果用了 `wbot_main_driver -i 1`（仅启动 dev1），需确保参数指向 dev1
+   - 建议：改用 `-i -1` 发布全部，由参数优先级选择主 IMU
+
+4. **重新校准并重启**
+   ```bash
+   param save
+   reboot
+   ```
+
+### 6.2 EKF2 启动失败
+
+症状：始终无 `estimator_status` 输出。
+
+排查：
+```bash
+dmesg | tail -20          # 看启动日志
+ps | grep ekf            # 检查进程
+top | grep ekf           # 看内存/CPU占用
+```
+
+常见原因：
+- 禁用了必需的融合项（例如关闭所有位置源会导致初始化失败）
+- 缺少必要的参数（如 EKF2_MULTI_IMU 配置错误）
+- 传感器完全不工作（IMU 无输出）
+
+## 7. 与代码的对应关系（索引）
+
+- 预飞行检查（ecf2 missing data 告警来源）：
+  - src/modules/commander/HealthAndArmingChecks/checks/estimatorCheck.cpp
 - 传感器投票器读取优先级：
   - src/modules/sensors/voted_sensors_update.cpp
 - 传感器校准槽位加载：
   - src/modules/sensors/sensors.cpp
-- EKF2 读取 `sensor_selection`：
+- EKF2 读取 `sensor_selection` 与实例切换：
   - src/modules/ekf2/EKF2.cpp

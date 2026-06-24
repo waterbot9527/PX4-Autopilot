@@ -18,12 +18,40 @@ param set-default MAV_TYPE    12      # MAV_TYPE_SUBMARINE
 param set-default COM_ARM_CHK_ESCS 0
 param set-default FD_ESCS_EN       0
 param set-default COM_ARM_SDCARD   0
-param set-default SDLOG_MODE       0
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+# SDLOG_MODE:
+#   0 = 解锁后开始记录（默认）
+#   1 = 开机即记录，直到加锁
+#   2 = 开机即记录，直到关机（推荐水下设备使用）
+param set SDLOG_MODE       2
+
+# SDLOG_PROFILE bitmask（可叠加）:
+#   bit0=1  默认主题集（传感器/执行器等基础数据）
+#   bit1=2  EKF2 全速率重放主题（用于事后姿态估计分析）
+#   bit5=32 调试主题（debug_*.msg，供自定义代码使用）
+# 1+2+32 = 35
+param set SDLOG_PROFILE    35
+
+# 最多保留的日志目录数（超出后自动删除最旧的）
+param set SDLOG_DIRS_MAX   10
+
+# 为每条日志添加全局唯一 UUID（便于多设备区分日志文件）
+param set SDLOG_UUID       1
 
 # ─── Safety / arming ─────────────────────────────────────────────────────────
+param set-default COM_RC_IN_MODE  1       # joystick only (gamepad via QGC), no RC calibration required
 param set-default COM_RCL_EXCEPT   4       # ignore RC loss in Offboard mode (bit2)
 param set-default COM_CPU_MAX     -1       # no CPU-load limit (Raspberry Pi)
 param set-default CBRK_SUPPLY_CHK 894281  # bypass voltage check (no battery)
+
+# ─── Manual input gains (raw manual feedthrough) ────────────────────────────
+param set-default UUV_MGM_ROLL  0.5
+param set-default UUV_MGM_PITCH 0.5
+param set-default UUV_MGM_YAW   0.5
+param set-default UUV_MGM_THRTL 0.5
+param set-default UUV_TORQUE_SAT 0.5
+param set-default UUV_THRUST_SAT 0.5
 
 # ─── Magnetometer: disabled for underwater ────────────────────────────────────
 param set-default EKF2_MAG_TYPE   0    # no mag fusion
@@ -54,14 +82,31 @@ param set-default CAL_MAG0_ID   14123400
 param set-default CAL_MAG0_PRIO 75
 param set-default CAL_MAG0_ROT  0
 
-param set-default WOUT_FUNC1 402
-param set-default WOUT_FUNC2 403
-param set-default WOUT_FUNC3 404
-param set-default WOUT_FUNC4 405
-param set-default WOUT_FUNC5 406
-param set-default WOUT_FUNC6 407
-param set-default WOUT_FUNC7 408
-param set-default WOUT_FUNC8 409
+# param set-default WOUT_FUNC1 402
+# param set-default WOUT_FUNC2 403
+# param set-default WOUT_FUNC3 404
+# param set-default WOUT_FUNC4 405
+# param set-default WOUT_FUNC5 406
+# param set-default WOUT_FUNC6 407
+# param set-default WOUT_FUNC7 408
+# param set-default WOUT_FUNC8 409
+
+param set-default WOUT_MIN1 0
+param set-default WOUT_MAX1 512
+param set-default WOUT_MIN2 0
+param set-default WOUT_MAX2 512
+param set-default WOUT_MIN3 0
+param set-default WOUT_MAX3 512
+param set-default WOUT_MIN4 0
+param set-default WOUT_MAX4 512
+param set-default WOUT_MIN5 0
+param set-default WOUT_MAX5 512
+param set-default WOUT_MIN6 0
+param set-default WOUT_MAX6 512
+param set-default WOUT_MIN7 0
+param set-default WOUT_MAX7 512
+param set-default WOUT_MIN8 0
+param set-default WOUT_MAX8 512
 
 # ─── WOUT output mapping (control allocation motor outputs) ──────────────────
 param set-default WOUT_FUNC1 101   # Motor1
@@ -116,74 +161,74 @@ param set-default WOUT_FUNC8 108   # Motor8
 param set-default CA_ROTOR_COUNT 8
 param set-default CA_R_REV 255
 
-# Rotor 0 (example slot: horizontal/vector thruster)
+# Rotor 0 (example slot: horizontal/vector thruster z轴的电机，提供Z轴的推力用于控制深度)
 param set-default CA_ROTOR0_PX -0.165
 param set-default CA_ROTOR0_PY 0.000
-param set-default CA_ROTOR0_PZ -0.040
+param set-default CA_ROTOR0_PZ 0.040
 param set-default CA_ROTOR0_AX 0.000
 param set-default CA_ROTOR0_AY 0.000
 param set-default CA_ROTOR0_AZ 1.000
-param set-default CA_ROTOR0_KM 0.000
+param set-default CA_ROTOR0_KM 0.05
 
-# Rotor 1 (example slot: horizontal/vector thruster)
+# Rotor 1 (example slot: horizontal/vector thruster x轴的电机，提供X轴的推力用于控制前进/后退)
 param set-default CA_ROTOR1_PX -0.155
 param set-default CA_ROTOR1_PY 0.020
 param set-default CA_ROTOR1_PZ 0.000
 param set-default CA_ROTOR1_AX 1.000
 param set-default CA_ROTOR1_AY 0.000
 param set-default CA_ROTOR1_AZ 0.000
-param set-default CA_ROTOR1_KM 0.000
+param set-default CA_ROTOR1_KM 0.05
 
-# Rotor 2 (example slot: horizontal/vector thruster)
+# Rotor 2 (example slot: horizontal/vector thruster x轴的电机，提供X轴的推力用于控制前进/后退)
 param set-default CA_ROTOR2_PX -0.155
 param set-default CA_ROTOR2_PY -0.020
 param set-default CA_ROTOR2_PZ 0.000
 param set-default CA_ROTOR2_AX 1.000
 param set-default CA_ROTOR2_AY 0.000
 param set-default CA_ROTOR2_AZ 0.000
-param set-default CA_ROTOR2_KM 0.000
+param set-default CA_ROTOR2_KM 0.05
 
-# Rotor 3 (center-mounted thruster, forward thrust)
+# Rotor 3 (center-mounted thruster, forward thrust 空)
 param set-default CA_ROTOR3_PX 0.000
 param set-default CA_ROTOR3_PY 0.000
 param set-default CA_ROTOR3_PZ 0.000
 param set-default CA_ROTOR3_AX 0.000
 param set-default CA_ROTOR3_AY 0.000
 param set-default CA_ROTOR3_AZ 0.000
-param set-default CA_ROTOR3_KM 0.000
+param set-default CA_ROTOR3_KM 0.00
 
-# Rotor 4 (front-left vertical thruster, downward thrust)
+# Rotor 4 (front-left vertical thruster, downward thrust  参考直升机，提供垂直于xz轴组成的面的轴向力用于控制俯仰角)
 param set-default CA_ROTOR4_PX 0.140
 param set-default CA_ROTOR4_PY -0.045
 param set-default CA_ROTOR4_PZ 0.000
 param set-default CA_ROTOR4_AX 0.000
 param set-default CA_ROTOR4_AY 0.000
 param set-default CA_ROTOR4_AZ 1.000
-param set-default CA_ROTOR4_KM 0.000
+param set-default CA_ROTOR4_KM 0.00
 
-# Rotor 5 (front-right fan thruster, forward thrust for Y-axis pitch control)
+# Rotor 5 (front-right fan thruster, forward thrust for Y-axis pitch control) 参考直升机，提供垂直于xz轴组成的面的轴向力用于控制俯仰角
 param set-default CA_ROTOR5_PX 0.140
 param set-default CA_ROTOR5_PY 0.045
 param set-default CA_ROTOR5_PZ 0.000
-param set-default CA_ROTOR5_AX 1.000
+param set-default CA_ROTOR5_AX 0.000
 param set-default CA_ROTOR5_AY 0.000
-param set-default CA_ROTOR5_AZ 0.000
-param set-default CA_ROTOR5_KM 0.000
+param set-default CA_ROTOR5_AZ 1.000
+param set-default CA_ROTOR5_KM 0.00
 
-# Rotor 6 (front-center vertical thruster, downward thrust)
+# Rotor 6 (front-center vertical thruster, downward thrust z轴的电机，提供Z轴的推力用于控制深度)
 param set-default CA_ROTOR6_PX 0.110
 param set-default CA_ROTOR6_PY 0.000
 param set-default CA_ROTOR6_PZ 0.002
 param set-default CA_ROTOR6_AX 0.000
 param set-default CA_ROTOR6_AY 0.000
 param set-default CA_ROTOR6_AZ 1.000
-param set-default CA_ROTOR6_KM 0.000
+param set-default CA_ROTOR6_KM 0.05
 
-# Rotor 7 (front-center fan thruster, forward thrust for Y-axis pitch control via pz offset)
+# Rotor 7 (front-center fan thruster, forward thrust for Y-axis pitch control via pz offset)参考直升机，提供垂直于xy轴组成的面的轴向力用于控制航向角
 param set-default CA_ROTOR7_PX 0.145
 param set-default CA_ROTOR7_PY 0.000
 param set-default CA_ROTOR7_PZ 0.004
-param set-default CA_ROTOR7_AX 1.000
-param set-default CA_ROTOR7_AY 0.000
+param set-default CA_ROTOR7_AX 0.000
+param set-default CA_ROTOR7_AY 1.000
 param set-default CA_ROTOR7_AZ 0.000
-param set-default CA_ROTOR7_KM 0.000
+param set-default CA_ROTOR7_KM 0.05

@@ -90,10 +90,10 @@ static constexpr int kCmdBufSize = 256;
 static uint32_t list_tty(char serial_name[][PATH_MAX])
 {
 
-	// const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.4/5-1.4:1.0";
-	// const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb5/5-1/5-1.3/5-1.3.4/5-1.3.4:1.0";
-	const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
-	const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
+	const char * dev0= "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.4/1-1.4:1.0";
+	const char* dev1 = "/sys/devices/platform/axi/1000480000.usb/usb1/1-1/1-1.3/1-1.3.4/1-1.3.4:1.0";
+	// const char* dev0 =  "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.4/3-1.4:1.0";
+	// const char* dev1 = "/sys/devices/platform/axi/1000120000.pcie/1f00300000.usb/xhci-hcd.1/usb3/3-1/3-1.3/3-1.3.4/3-1.3.4:1.0";
 
 
 	serial_name[0][0] = serial_name[1][0] = '\0';
@@ -268,6 +268,10 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 	_rotation_mag(static_cast<Rotation>(mag_rotation_value)),
 	_imu_publish_dev(imu_publish_dev)
 {
+	for (auto &pub : _uuvmotor_pub) {
+		pub = new uORB::PublicationMulti<uuvmotor_s>(ORB_ID(uuvmotor));
+	}
+
 	_wbot_moto_sub = orb_subscribe(ORB_ID(wbot_ctrl_moto) );
 	_wbot_led_sub = orb_subscribe(ORB_ID(wbot_ctrl_led));
 
@@ -311,6 +315,11 @@ WBotMainDriver::WBotMainDriver(uint8_t imu_rotation_value, uint8_t mag_rotation_
 WBotMainDriver::~WBotMainDriver()
 {
 	ScheduleClear();
+
+	for (auto &pub : _uuvmotor_pub) {
+		delete pub;
+		pub = nullptr;
+	}
 
 	// release allocated sensor objects
 	for (uint32_t dev_id = 0; dev_id < TOTAL_SERIAL_COUNT; dev_id++) {
@@ -668,8 +677,18 @@ bool WBotMainDriver::parse_motor_data(uint8_t dev_id, uint8_t *data, uint32_t mo
 		msg.supply_voltage = (float)supply_v_raw * 0.122f;
 		msg.motor_current = (float)motor_current_raw * 5.86e-3f;
 
-		// publish
-		_uuvmotor_pub.publish(msg);
+		// publish to dedicated instance per motor
+		const uint32_t pub_idx = static_cast<uint32_t>(dev_id) * MOTOR_MAX_INDEX + static_cast<uint32_t>(moto_index);
+
+		if (pub_idx < _uuvmotor_pub.size()) {
+			if (_uuvmotor_pub[pub_idx] != nullptr) {
+				_uuvmotor_pub[pub_idx]->publish(msg);
+			}
+
+		} else {
+			PX4_WARN("uuvmotor publish index overflow: dev=%u motor=%u idx=%u", (unsigned)dev_id,
+				 (unsigned)moto_index, (unsigned)pub_idx);
+		}
 	}
 
 	return true;

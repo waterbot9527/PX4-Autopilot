@@ -89,6 +89,9 @@ public:
 	uint32_t _max_dev_id;
 
 private:
+	static constexpr uint8_t MOTOR_MAX_INDEX = 8; // 每个设备最多支持的电机索引数量
+	static constexpr uint8_t UUVMOTOR_INSTANCE_COUNT = TOTAL_SERIAL_COUNT * MOTOR_MAX_INDEX;
+
 	std::array<uORB::PublicationMulti<water_depth_s>, TOTAL_SERIAL_COUNT> _water_depth_pub{{
 		uORB::PublicationMulti<water_depth_s>(ORB_ID(water_depth)),
 		uORB::PublicationMulti<water_depth_s>(ORB_ID(water_depth))
@@ -164,11 +167,10 @@ private:
 	perf_counter_t _bad_crc_err_perf{perf_alloc(PC_COUNT, MODULE_NAME": bad crc checksum")};
 	perf_counter_t _right_perf{perf_alloc(PC_COUNT, MODULE_NAME": all_right")};
 
-	// uuv motor publish: single publication used for all motor messages
-	uORB::Publication<uuvmotor_s> _uuvmotor_pub{ORB_ID(uuvmotor)};
+	// uuv motor publish: one uORB instance per physical motor (dev_id * MOTOR_MAX_INDEX + motor_id)
+	std::array<uORB::PublicationMulti<uuvmotor_s> *, UUVMOTOR_INSTANCE_COUNT> _uuvmotor_pub{};
 
 	// last publish time per (dev_id, motor_index) for rate limiting
-	static constexpr uint8_t MOTOR_MAX_INDEX = 8; // 最大电机数量
 	hrt_abstime _last_motor_pub[TOTAL_SERIAL_COUNT][MOTOR_MAX_INDEX] = {{0}};
 
 	// minimum interval between publishes per motor (us)
