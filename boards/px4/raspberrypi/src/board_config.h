@@ -39,7 +39,9 @@
 
 #pragma once
 
-#define BOARD_OVERRIDE_UUID "RPIID00000000000" // must be of length 16
+// BOARD_OVERRIDE_UUID is intentionally not defined.
+// The UUID is dynamically read from /proc/cpuinfo at runtime
+// in board_identity.cpp within this board's src directory.
 #define PX4_SOC_ARCH_ID     PX4_SOC_ARCH_ID_RPI
 
 

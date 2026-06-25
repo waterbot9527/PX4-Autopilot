@@ -32,6 +32,7 @@
 ############################################################################
 
 add_library(drivers_board
+	board_identity.cpp
 	i2c.cpp
 	spi.cpp
 )

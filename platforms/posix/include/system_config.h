@@ -52,7 +52,8 @@
 #define BOARD_OVERRIDE_CPU_VERSION (-1)
 #define board_mcu_version(rev, revstr, errata) BOARD_OVERRIDE_CPU_VERSION
 
-#define BOARD_HAS_NO_UUID
+// BOARD_HAS_NO_UUID is intentionally not defined on Raspberry Pi.
+// The UUID is dynamically read from /proc/cpuinfo at runtime.
 
 #define CONFIG_NFILE_STREAMS 1
 #define CONFIG_SCHED_WORKQUEUE 1
