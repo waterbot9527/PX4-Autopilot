@@ -18,6 +18,8 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/module.h>
 
+#include <time.h>
+
 
 #define MAX_WBOT_ACTUATORS (8)
 
@@ -25,7 +27,7 @@
 class WBotMixOut : public ModuleBase<WBotMixOut>, public OutputModuleInterface
 {
 public:
-	WBotMixOut();
+	WBotMixOut(const char *config_path = nullptr);
 	~WBotMixOut() override;
 
 	/** @see ModuleBase */
@@ -51,6 +53,10 @@ public:
 			   unsigned num_outputs, unsigned num_control_groups_updated) override;
 
 private:
+	static constexpr unsigned WBOT_MAX_CONTROL_MODE_CNT = 8;
+	static constexpr unsigned WBOT_MAX_MOTO_CNT = 8;
+	static constexpr unsigned WBOT_CONFIG_PATH_LEN = 128;
+
 	void Run() override;
 
 	uint32_t mycnt = 0;
@@ -95,4 +101,13 @@ private:
 	void _init_orb_publishers();
 	void handle_led_brightness_control(int8_t change_value);
 	void handle_reboot_mcu();
+	void reset_control_mode_config();
+	bool load_control_mode_config(const char *path, bool warn_on_missing);
+	bool maybe_reload_control_mode_config();
+
+	float _control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT]{};
+	char _config_path[WBOT_CONFIG_PATH_LEN]{};
+	time_t _config_mtime{};
+	bool _config_loaded_from_file{false};
+	hrt_abstime _last_config_check{0};
 };

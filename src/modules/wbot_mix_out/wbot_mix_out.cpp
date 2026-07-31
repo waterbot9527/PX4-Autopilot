@@ -1,9 +1,33 @@
 
 #include "wbot_mix_out.hpp"
+#include <cctype>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 #include <cstdlib>
+#include <sys/stat.h>
 // #define MOTOR_TEST
 
 using namespace time_literals;
+
+static constexpr const char *kDefaultConfigPaths[] = {
+	PX4_STORAGEDIR "/etc/wbot_mix_config.txt",
+	"/fs/microsd/etc/wbot_mix_config.txt",
+	"/etc/wbot_mix_config.txt",
+	"etc/wbot_mix_config.txt",
+	"wbot_mix_config.txt",
+};
+
+static constexpr float kDefaultControlModeConfig[8][8] = {
+	{ -0.0, +0.0, +0.0, +0.0, +0.0, -0.0, +0.0, +1.0 }, /* stick1-x-right */
+	{ +0.0, -0.0, -0.0, -0.0, -0.0, +0.0, +0.0, -1.0 }, /* stick1-x-left */
+	{ +0.0, -1.0, +1.0, -0.0, -0.0, +0.0, -0.0, +0.0 }, /* stick1-y-up */
+	{ -0.0, +1.0, -1.0, +0.0, +0.0, +0.0, +0.0, -0.0 }, /* stick1-y-down */
+	{ +0.0, +0.0, -0.0, +0.0, +1.0, -1.0, +0.0, +0.0 }, /* stick2-y-up */
+	{ -0.0, -0.0, +0.0, -0.0, -1.0, +1.0, -0.0, -0.0 }, /* stick2-y-down */
+	{ -1.0, +0.0, +0.0, +0.0, +0.0, +0.0, -1.0, +0.0 }, /* stick2-x-right */
+	{ +1.0, -0.0, -0.0, -0.0, -0.0, -0.0, +1.0, -0.0 }  /* stick2-x-left */
+};
 
 
 static void set_raspberry_led(double pwm_value)
@@ -35,10 +59,25 @@ static void set_raspberry_led(double pwm_value)
     fclose(f);  // 关闭文件
 }
 
-WBotMixOut::WBotMixOut():
+WBotMixOut::WBotMixOut(const char *config_path):
 	OutputModuleInterface(MODULE_NAME, px4::wq_configurations::hp_default)
 {
+	reset_control_mode_config();
 
+	if (config_path != nullptr && config_path[0] != '\0') {
+		strncpy(_config_path, config_path, sizeof(_config_path) - 1);
+		load_control_mode_config(_config_path, true);
+
+	} else {
+		strncpy(_config_path, kDefaultConfigPaths[0], sizeof(_config_path) - 1);
+
+		for (const char *path : kDefaultConfigPaths) {
+			if (load_control_mode_config(path, false)) {
+				strncpy(_config_path, path, sizeof(_config_path) - 1);
+				break;
+			}
+		}
+	}
 }
 WBotMixOut::~WBotMixOut()
 {
@@ -75,8 +114,135 @@ void WBotMixOut::_init_orb_publishers()
     }
 }
 
+void WBotMixOut::reset_control_mode_config()
+{
+	memcpy(_control_mode_config, kDefaultControlModeConfig, sizeof(_control_mode_config));
+	_config_loaded_from_file = false;
+	_config_mtime = 0;
+}
+
+bool WBotMixOut::load_control_mode_config(const char *path, bool warn_on_missing)
+{
+	if (path == nullptr || path[0] == '\0') {
+		return false;
+	}
+
+	FILE *f = fopen(path, "r");
+
+	if (f == nullptr) {
+		if (warn_on_missing) {
+			PX4_WARN("wbot mix config not found: %s", path);
+		}
+
+		return false;
+	}
+
+	float parsed[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT]{};
+	unsigned row = 0;
+	char line[256];
+
+	while (fgets(line, sizeof(line), f) != nullptr && row < WBOT_MAX_CONTROL_MODE_CNT) {
+		char *comment = strchr(line, '#');
+
+		if (comment != nullptr) {
+			*comment = '\0';
+		}
+
+		for (char *p = line; *p != '\0'; ++p) {
+			if (*p == ',' || *p == '[' || *p == ']') {
+				*p = ' ';
+			}
+		}
+
+		char *p = line;
+
+		while (isspace((unsigned char)*p)) {
+			++p;
+		}
+
+		if (*p == '\0') {
+			continue;
+		}
+
+		for (unsigned col = 0; col < WBOT_MAX_MOTO_CNT; ++col) {
+			char *end = nullptr;
+			errno = 0;
+			parsed[row][col] = strtof(p, &end);
+
+			if (end == p || errno == ERANGE) {
+				PX4_ERR("bad wbot mix config value at row %u col %u: %s", row, col, path);
+				fclose(f);
+				return false;
+			}
+
+			p = end;
+		}
+
+		while (isspace((unsigned char)*p)) {
+			++p;
+		}
+
+		if (*p != '\0') {
+			PX4_ERR("too many values in wbot mix config row %u: %s", row, path);
+			fclose(f);
+			return false;
+		}
+
+		++row;
+	}
+
+	fclose(f);
+
+	if (row != WBOT_MAX_CONTROL_MODE_CNT) {
+		PX4_ERR("wbot mix config needs %u rows, got %u: %s", WBOT_MAX_CONTROL_MODE_CNT, row, path);
+		return false;
+	}
+
+	memcpy(_control_mode_config, parsed, sizeof(_control_mode_config));
+	_config_loaded_from_file = true;
+
+	struct stat st {};
+
+	if (stat(path, &st) == 0) {
+		_config_mtime = st.st_mtime;
+	}
+
+	PX4_INFO("loaded wbot mix config: %s", path);
+	return true;
+}
+
+bool WBotMixOut::maybe_reload_control_mode_config()
+{
+	if (_config_path[0] == '\0') {
+		return false;
+	}
+
+	const hrt_abstime now = hrt_absolute_time();
+
+	if (now - _last_config_check < 1_s) {
+		return false;
+	}
+
+	_last_config_check = now;
+
+	struct stat st {};
+
+	if (stat(_config_path, &st) != 0) {
+		return false;
+	}
+
+	if (!_config_loaded_from_file || st.st_mtime != _config_mtime) {
+		return load_control_mode_config(_config_path, true);
+	}
+
+	return false;
+}
+
 int WBotMixOut::print_status()
 {
+	PX4_INFO("mix config: %s%s",
+		 _config_path[0] != '\0' ? _config_path : "built-in default",
+		 _config_loaded_from_file ? "" : " (default values)");
 	return 0;
 }
 
@@ -92,6 +258,7 @@ void WBotMixOut::Run()
 		_orb_inited = true;  // 标记为已初始化，后续不再执行
 	}
 	_mixing_output.update();
+	maybe_reload_control_mode_config();
 
 
 	#if 0
@@ -135,6 +302,7 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 	}
 	printf("\n");
 #else
+#if 0
 	#define WBOT_MAX_CONTROL_MODE_CNT (8)
 	#define WBOT_MAX_MOTO_CNT (8)
 	/*
@@ -178,19 +346,35 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		{ -1.0, +0.0, -1.0, +0.0, +0.0, +0.0, -0.0, +0.0 }, /* 摇杆2-X-R */
 		{ +1.0, -0.0, +1.0, -0.0, -0.0, -0.0, +0.0, +0.0 }  /* 摇杆2-X-L */
 #else
-	static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
+	// static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
+	// 	//{下潜上浮1，前进后退1，上浮下潜2,前进后退2,右左转，俯仰1，俯仰2，空} 带注入
+	// 	{ -0.0,	+0.0, +0.0, +0.0, +1.0, -0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
+	// 	{ +0.0, -0.0, -0.0, -0.0, -1.0, +0.0, +0.0, -0.0 }, /* 摇杆1-X-L */
+	// 	{ +0.0, -1.0, -0.0, -1.0, -0.0, +0.0, -0.0, +0.0 }, /* 摇杆1-Y-U */
+	// 	{ -0.0, +1.0, +0.0, +1.0, +0.0, +0.0, +0.0, -0.0 }, /* 摇杆1-Y-D */
+	// 	{ +0.0, +0.0, -0.0, +0.0, +0.0, -1.0, +1.0, +0.0 }, /* 摇杆2-Y-U */
+	// 	{ -0.0, -0.0, +0.0, -0.0, -0.0, +1.0, -1.0, -0.0 }, /* 摇杆2-Y-D */
+	// 	{ -1.0, +0.0, +1.0, +0.0, +0.0, +0.0, -0.0, +0.0 }, /* 摇杆2-X-R */
+	// 	{ +1.0, -0.0, -1.0, -0.0, -0.0, -0.0, +0.0, +0.0 }  /* 摇杆2-X-L */
+	// };
+
+		static const float control_mode_config[WBOT_MAX_CONTROL_MODE_CNT][WBOT_MAX_MOTO_CNT] = {
 		//{下潜上浮1，前进后退1，上浮下潜2,前进后退2,右左转，俯仰1，俯仰2，空} 带注入
-		{ -0.0,	+0.0, +0.0, +0.0, +1.0, -0.0, +0.0, +0.0 }, /* 摇杆1-X-R */
-		{ +0.0, -0.0, -0.0, -0.0, -1.0, +0.0, +0.0, -0.0 }, /* 摇杆1-X-L */
-		{ +0.0, -1.0, -0.0, -1.0, -0.0, +0.0, -0.0, +0.0 }, /* 摇杆1-Y-U */
-		{ -0.0, +1.0, +0.0, +1.0, +0.0, +0.0, +0.0, -0.0 }, /* 摇杆1-Y-D */
-		{ +0.0, +0.0, -0.0, +0.0, +0.0, -1.0, +1.0, +0.0 }, /* 摇杆2-Y-U */
-		{ -0.0, -0.0, +0.0, -0.0, -0.0, +1.0, -1.0, -0.0 }, /* 摇杆2-Y-D */
-		{ -1.0, +0.0, +1.0, +0.0, +0.0, +0.0, -0.0, +0.0 }, /* 摇杆2-X-R */
-		{ +1.0, -0.0, -1.0, -0.0, -0.0, -0.0, +0.0, +0.0 }  /* 摇杆2-X-L */
+		{ -0.0,	+0.0, +0.0, +0.0, +0.0, -0.0, +0.0, +1.0 }, /* 摇杆1-X-R */
+		{ +0.0, -0.0, -0.0, -0.0, -0.0, +0.0, +0.0, -1.0 }, /* 摇杆1-X-L */
+		{ +0.0, -1.0, +1.0, -0.0, -0.0, +0.0, -0.0, +0.0 }, /* 摇杆1-Y-U */
+		{ -0.0, +1.0, -1.0, +0.0, +0.0, +0.0, +0.0, -0.0 }, /* 摇杆1-Y-D */
+		{ +0.0, +0.0, -0.0, +0.0, +1.0, -1.0, +0.0, +0.0 }, /* 摇杆2-Y-U */
+		{ -0.0, -0.0, +0.0, -0.0, -1.0, +1.0, -0.0, -0.0 }, /* 摇杆2-Y-D */
+		{ -1.0, +0.0, +0.0, +0.0, +0.0, +0.0, -1.0, +0.0 }, /* 摇杆2-X-R */
+		{ +1.0, -0.0, -0.0, -0.0, -0.0, -0.0, +1.0, -0.0 }  /* 摇杆2-X-L */
 	};
+
+
+
 #endif // MOTOR_TEST
 
+#endif
 
 	//only for debug
 	// for ( int n = 0; n < MAX_ACTUATORS; n++)
@@ -225,12 +409,12 @@ bool WBotMixOut::updateOutputs(uint16_t outputs[MAX_ACTUATORS],
 		} else {
 			ctrl_mode = 1 + n*2;
 		}
-		for ( int k = 0; k < WBOT_MAX_MOTO_CNT; k++ )
+		for (unsigned k = 0; k < WBOT_MAX_MOTO_CNT; k++ )
 		{
-			f_speed[k] += (control_mode_config[ctrl_mode][k] * ((float)control_mode_abs_value));
+			f_speed[k] += (_control_mode_config[ctrl_mode][k] * ((float)control_mode_abs_value));
 		}
 	}
-	for ( int n = 0; n < WBOT_MAX_MOTO_CNT; n++)
+	for (unsigned n = 0; n < WBOT_MAX_MOTO_CNT; n++)
 	{
 		if ( f_speed[n] >= 0 ) {
 
@@ -331,6 +515,7 @@ int WBotMixOut::print_usage(const char *reason)
 {
 	PRINT_MODULE_USAGE_NAME("wbot_mix_out", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
+	PRINT_MODULE_USAGE_PARAM_STRING('c', nullptr, nullptr, "Mix config file path", true);
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 	return 0;
 }
@@ -339,7 +524,24 @@ int WBotMixOut::task_spawn(int argc, char *argv[])
 {
 	PX4_INFO("wbox mix out main task swpan");
 
-	WBotMixOut *instance = new WBotMixOut();
+	const char *config_path = nullptr;
+	int ch;
+	int myoptind = 1;
+	const char *myoptarg = nullptr;
+
+	while ((ch = px4_getopt(argc, argv, "c:", &myoptind, &myoptarg)) != EOF) {
+		switch (ch) {
+		case 'c':
+			config_path = myoptarg;
+			break;
+
+		default:
+			print_usage("unknown option");
+			return -1;
+		}
+	}
+
+	WBotMixOut *instance = new WBotMixOut(config_path);
 
 	if (!instance) {
 		PX4_ERR("WBotMixOut alloc failed");
